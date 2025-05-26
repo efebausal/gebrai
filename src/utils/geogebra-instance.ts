@@ -546,6 +546,7 @@ export class GeoGebraInstance implements GeoGebraAPI {
       await this.page!.evaluate((visible) => {
         (window as any).ggbApplet.setGridVisible(visible);
       }, visible);
+      
       logger.debug(`Grid visibility set on instance ${this.id}: ${visible}`);
     } catch (error) {
       logger.error(`Failed to set grid visibility on instance ${this.id}`, error);
@@ -721,6 +722,122 @@ export class GeoGebraInstance implements GeoGebraAPI {
   private ensureInitialized(): void {
     if (!this.isInitialized) {
       throw new GeoGebraConnectionError('GeoGebra instance not initialized');
+    }
+  }
+
+  /**
+   * Animation Methods
+   */
+  async setAnimating(objName: string, animate: boolean): Promise<void> {
+    this.ensureInitialized();
+    this.updateActivity();
+
+    try {
+      await this.page!.evaluate((objName, animate) => {
+        (window as any).ggbApplet.setAnimating(objName, animate);
+      }, objName, animate);
+      
+      logger.debug(`Set animating for ${objName} on instance ${this.id}: ${animate}`);
+    } catch (error) {
+      logger.error(`Failed to set animating for ${objName} on instance ${this.id}`, error);
+      throw new GeoGebraError(`Failed to set animating: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async setAnimationSpeed(objName: string, speed: number): Promise<void> {
+    this.ensureInitialized();
+    this.updateActivity();
+
+    try {
+      await this.page!.evaluate((objName, speed) => {
+        (window as any).ggbApplet.setAnimationSpeed(objName, speed);
+      }, objName, speed);
+      
+      logger.debug(`Set animation speed for ${objName} on instance ${this.id}: ${speed}`);
+    } catch (error) {
+      logger.error(`Failed to set animation speed for ${objName} on instance ${this.id}`, error);
+      throw new GeoGebraError(`Failed to set animation speed: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async startAnimation(): Promise<void> {
+    this.ensureInitialized();
+    this.updateActivity();
+
+    try {
+      await this.page!.evaluate(() => {
+        (window as any).ggbApplet.startAnimation();
+      });
+      
+      logger.debug(`Started animation on instance ${this.id}`);
+    } catch (error) {
+      logger.error(`Failed to start animation on instance ${this.id}`, error);
+      throw new GeoGebraError(`Failed to start animation: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async stopAnimation(): Promise<void> {
+    this.ensureInitialized();
+    this.updateActivity();
+
+    try {
+      await this.page!.evaluate(() => {
+        (window as any).ggbApplet.stopAnimation();
+      });
+      
+      logger.debug(`Stopped animation on instance ${this.id}`);
+    } catch (error) {
+      logger.error(`Failed to stop animation on instance ${this.id}`, error);
+      throw new GeoGebraError(`Failed to stop animation: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async isAnimationRunning(): Promise<boolean> {
+    this.ensureInitialized();
+    this.updateActivity();
+
+    try {
+      const isRunning = await this.page!.evaluate(() => {
+        return (window as any).ggbApplet.isAnimationRunning();
+      }) as boolean;
+      
+      logger.debug(`Animation running status on instance ${this.id}: ${isRunning}`);
+      return isRunning;
+    } catch (error) {
+      logger.error(`Failed to check animation status on instance ${this.id}`, error);
+      throw new GeoGebraError(`Failed to check animation status: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async setTrace(objName: string, flag: boolean): Promise<void> {
+    this.ensureInitialized();
+    this.updateActivity();
+
+    try {
+      await this.page!.evaluate((objName, flag) => {
+        (window as any).ggbApplet.setTrace(objName, flag);
+      }, objName, flag);
+      
+      logger.debug(`Set trace for ${objName} on instance ${this.id}: ${flag}`);
+    } catch (error) {
+      logger.error(`Failed to set trace for ${objName} on instance ${this.id}`, error);
+      throw new GeoGebraError(`Failed to set trace: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async setValue(objName: string, value: number): Promise<void> {
+    this.ensureInitialized();
+    this.updateActivity();
+
+    try {
+      await this.page!.evaluate((objName, value) => {
+        (window as any).ggbApplet.setValue(objName, value);
+      }, objName, value);
+      
+      logger.debug(`Set value for ${objName} on instance ${this.id}: ${value}`);
+    } catch (error) {
+      logger.error(`Failed to set value for ${objName} on instance ${this.id}`, error);
+      throw new GeoGebraError(`Failed to set value: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 } 

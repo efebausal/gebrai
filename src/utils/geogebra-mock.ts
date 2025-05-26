@@ -18,6 +18,10 @@ export class MockGeoGebraInstance implements GeoGebraAPI {
   private isInitialized: boolean = false;
   private lastActivity: Date = new Date();
   private objects: Map<string, GeoGebraObject> = new Map();
+  private animatingObjects: Set<string> = new Set();
+  private animationSpeeds: Map<string, number> = new Map();
+  private tracedObjects: Set<string> = new Set();
+  private isAnimating: boolean = false;
   
   public readonly id: string;
   public readonly config: GeoGebraConfig;
@@ -82,10 +86,10 @@ export class MockGeoGebraInstance implements GeoGebraAPI {
       };
     } catch (error) {
       logger.error(`Mock command execution failed on instance ${this.id}`, { command, error });
-      throw new GeoGebraCommandError(
-        `Failed to execute command: ${error instanceof Error ? error.message : String(error)}`,
-        command
-      );
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
     }
   }
 
@@ -110,6 +114,22 @@ export class MockGeoGebraInstance implements GeoGebraAPI {
         color: '#0000FF'
       });
       return `Point ${name} created at (${x}, ${y})`;
+    }
+
+    // Slider creation: name = Slider(min, max, increment, speed, width, isAngle, horizontal, animating, random)
+    const sliderMatch = trimmed.match(/^([A-Za-z]\w*)\s*=\s*Slider\s*\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*(?:\s*,\s*(\d+(?:\.\d+)?))?\s*.*?\)$/);
+    if (sliderMatch && sliderMatch[1] && sliderMatch[2] && sliderMatch[3]) {
+      const [, name, min, max, _increment] = sliderMatch;
+      const defaultValue = parseFloat(min);
+      this.objects.set(name, {
+        name,
+        type: 'slider',
+        visible: true,
+        defined: true,
+        value: defaultValue,
+        color: '#0073E6'
+      });
+      return `Slider ${name} created with range [${min}, ${max}], current value: ${defaultValue}`;
     }
 
     // Line creation: l = Line(A, B)
@@ -228,6 +248,57 @@ export class MockGeoGebraInstance implements GeoGebraAPI {
         color: '#00FF00'
       });
       return `Circle created at (${x}, ${y}) with radius ${r}`;
+    }
+
+    // CAS Operations
+    
+    // Solve equation: Solve(equation)
+    const solveMatch = trimmed.match(/^Solve\s*\(\s*(.+)\s*\)$/);
+    if (solveMatch && solveMatch[1]) {
+      const [, equation] = solveMatch;
+      return this.mockSolveEquation(equation);
+    }
+
+    // Solve equation for variable: Solve(equation, variable)
+    const solveVarMatch = trimmed.match(/^Solve\s*\(\s*(.+?)\s*,\s*([a-zA-Z]\w*)\s*\)$/);
+    if (solveVarMatch && solveVarMatch[1] && solveVarMatch[2]) {
+      const [, equation, variable] = solveVarMatch;
+      return this.mockSolveEquation(equation, variable);
+    }
+
+    // Differentiate with respect to variable: Derivative(expression, variable)
+    const derivativeVarMatch = trimmed.match(/^Derivative\s*\(\s*(.+?)\s*,\s*([a-zA-Z]\w*)\s*\)$/);
+    if (derivativeVarMatch && derivativeVarMatch[1] && derivativeVarMatch[2]) {
+      const [, expression, variable] = derivativeVarMatch;
+      return this.mockDifferentiate(expression, variable);
+    }
+
+    // Differentiate: Derivative(expression)
+    const derivativeMatch = trimmed.match(/^Derivative\s*\(\s*(.+)\s*\)$/);
+    if (derivativeMatch && derivativeMatch[1]) {
+      const [, expression] = derivativeMatch;
+      return this.mockDifferentiate(expression);
+    }
+
+    // Integrate with respect to variable: Integral(expression, variable)
+    const integralVarMatch = trimmed.match(/^Integral\s*\(\s*(.+?)\s*,\s*([a-zA-Z]\w*)\s*\)$/);
+    if (integralVarMatch && integralVarMatch[1] && integralVarMatch[2]) {
+      const [, expression, variable] = integralVarMatch;
+      return this.mockIntegrate(expression, variable);
+    }
+
+    // Integrate: Integral(expression)
+    const integralMatch = trimmed.match(/^Integral\s*\(\s*(.+)\s*\)$/);
+    if (integralMatch && integralMatch[1]) {
+      const [, expression] = integralMatch;
+      return this.mockIntegrate(expression);
+    }
+
+    // Simplify: Simplify(expression)
+    const simplifyMatch = trimmed.match(/^Simplify\s*\(\s*(.+)\s*\)$/);
+    if (simplifyMatch && simplifyMatch[1]) {
+      const [, expression] = simplifyMatch;
+      return this.mockSimplify(expression);
     }
 
     // Generic command (just acknowledge)
@@ -425,7 +496,7 @@ export class MockGeoGebraInstance implements GeoGebraAPI {
   async setGridVisible(visible: boolean): Promise<void> {
     this.ensureInitialized();
     this.updateActivity();
-    logger.debug(`Mock grid visibility set on instance ${this.id}: ${visible}`);
+    logger.debug(`Mock instance ${this.id}: Set grid visible: ${visible}`);
   }
 
   /**
@@ -521,5 +592,231 @@ export class MockGeoGebraInstance implements GeoGebraAPI {
     if (!this.isInitialized) {
       throw new GeoGebraConnectionError('Mock GeoGebra instance not initialized');
     }
+  }
+
+  /**
+   * Mock implementation of equation solving
+   */
+  private mockSolveEquation(equation: string, variable?: string): string {
+    logger.debug(`Mock solving equation: ${equation}${variable ? ` for ${variable}` : ''}`);
+    
+    // Simple mock responses for common cases
+    if (equation.includes('x^2')) {
+      return variable ? 
+        `{${variable} = -√(solution), ${variable} = √(solution)}` : 
+        `Solutions: x = -√(solution), x = √(solution)`;
+    }
+    
+    if (equation.includes('x =') || equation.includes('= x')) {
+      const match = equation.match(/(-?\d+(?:\.\d+)?)/);
+      const value = match ? match[1] : '0';
+      return variable ? 
+        `{${variable} = ${value}}` : 
+        `Solution: x = ${value}`;
+    }
+    
+    // Linear equation pattern
+    if (equation.match(/\d*x\s*[+-]/)) {
+      return variable ? 
+        `{${variable} = solution_value}` : 
+        `Solution: x = solution_value`;
+    }
+    
+    return `Mock solution for equation: ${equation}`;
+  }
+
+  /**
+   * Mock implementation of differentiation
+   */
+  private mockDifferentiate(expression: string, variable: string = 'x'): string {
+    logger.debug(`Mock differentiating: ${expression} with respect to ${variable}`);
+    
+    // Simple mock responses for common cases
+    if (expression === variable) {
+      return '1';
+    }
+    
+    if (expression.includes(`${variable}^2`)) {
+      return `2*${variable}`;
+    }
+    
+    if (expression.includes(`${variable}^3`)) {
+      return `3*${variable}^2`;
+    }
+    
+    if (expression.includes(`sin(${variable})`)) {
+      return `cos(${variable})`;
+    }
+    
+    if (expression.includes(`cos(${variable})`)) {
+      return `-sin(${variable})`;
+    }
+    
+    if (expression.includes(`e^${variable}`)) {
+      return `e^${variable}`;
+    }
+    
+    if (!expression.includes(variable)) {
+      return '0';
+    }
+    
+    return `d/d${variable}(${expression})`;
+  }
+
+  /**
+   * Mock implementation of integration
+   */
+  private mockIntegrate(expression: string, variable: string = 'x'): string {
+    logger.debug(`Mock integrating: ${expression} with respect to ${variable}`);
+    
+    // Simple mock responses for common cases
+    if (expression === '1') {
+      return variable;
+    }
+    
+    if (expression === variable) {
+      return `${variable}^2/2`;
+    }
+    
+    if (expression.includes(`${variable}^2`)) {
+      return `${variable}^3/3`;
+    }
+    
+    if (expression.includes(`${variable}^3`)) {
+      return `${variable}^4/4`;
+    }
+    
+    if (expression.includes(`sin(${variable})`)) {
+      return `-cos(${variable})`;
+    }
+    
+    if (expression.includes(`cos(${variable})`)) {
+      return `sin(${variable})`;
+    }
+    
+    if (expression.includes(`e^${variable}`)) {
+      return `e^${variable}`;
+    }
+    
+    return `∫(${expression}, ${variable})dx`;
+  }
+
+  /**
+   * Mock implementation of expression simplification
+   */
+  private mockSimplify(expression: string): string {
+    logger.debug(`Mock simplifying: ${expression}`);
+    
+    // Simple mock simplifications
+    let simplified = expression;
+    
+    // Remove unnecessary parentheses and spaces
+    simplified = simplified.replace(/\s+/g, '');
+    simplified = simplified.replace(/\(([^()]+)\)/g, '$1');
+    
+    // Combine like terms (very basic)
+    simplified = simplified.replace(/(\d+)\*x\+(\d+)\*x/g, (_match, a, b) => {
+      return `${parseInt(a) + parseInt(b)}*x`;
+    });
+    
+    // Basic arithmetic
+    simplified = simplified.replace(/(\d+)\+(\d+)/g, (_match, a, b) => {
+      return `${parseInt(a) + parseInt(b)}`;
+    });
+    
+    simplified = simplified.replace(/(\d+)\*1/g, '$1');
+    simplified = simplified.replace(/1\*(\d+)/g, '$1');
+    simplified = simplified.replace(/\+0/g, '');
+    simplified = simplified.replace(/0\+/g, '');
+    
+    return simplified === expression ? expression : simplified;
+  }
+
+  /**
+   * Animation Methods
+   */
+  async setAnimating(objName: string, animate: boolean): Promise<void> {
+    this.ensureInitialized();
+    this.updateActivity();
+    
+    if (!this.objects.has(objName)) {
+      throw new Error(`Object ${objName} does not exist`);
+    }
+    
+    if (animate) {
+      this.animatingObjects.add(objName);
+      if (!this.animationSpeeds.has(objName)) {
+        this.animationSpeeds.set(objName, 1); // Default speed
+      }
+    } else {
+      this.animatingObjects.delete(objName);
+    }
+    
+    logger.debug(`Mock instance ${this.id}: Set animating for ${objName}: ${animate}`);
+  }
+
+  async setAnimationSpeed(objName: string, speed: number): Promise<void> {
+    this.ensureInitialized();
+    this.updateActivity();
+    
+    if (!this.objects.has(objName)) {
+      throw new Error(`Object ${objName} does not exist`);
+    }
+    
+    this.animationSpeeds.set(objName, speed);
+    logger.debug(`Mock instance ${this.id}: Set animation speed for ${objName}: ${speed}`);
+  }
+
+  async startAnimation(): Promise<void> {
+    this.ensureInitialized();
+    this.updateActivity();
+    
+    this.isAnimating = true;
+    logger.debug(`Mock instance ${this.id}: Started animation for ${this.animatingObjects.size} objects`);
+  }
+
+  async stopAnimation(): Promise<void> {
+    this.ensureInitialized();
+    this.updateActivity();
+    
+    this.isAnimating = false;
+    logger.debug(`Mock instance ${this.id}: Stopped animation`);
+  }
+
+  async isAnimationRunning(): Promise<boolean> {
+    this.ensureInitialized();
+    this.updateActivity();
+    
+    return this.isAnimating && this.animatingObjects.size > 0;
+  }
+
+  async setTrace(objName: string, flag: boolean): Promise<void> {
+    this.ensureInitialized();
+    this.updateActivity();
+    
+    if (!this.objects.has(objName)) {
+      throw new Error(`Object ${objName} does not exist`);
+    }
+    
+    if (flag) {
+      this.tracedObjects.add(objName);
+    } else {
+      this.tracedObjects.delete(objName);
+    }
+    
+    logger.debug(`Mock instance ${this.id}: Set trace for ${objName}: ${flag}`);
+  }
+
+  async setValue(objName: string, value: number): Promise<void> {
+    this.ensureInitialized();
+    this.updateActivity();
+    
+    const obj = this.objects.get(objName);
+    if (!obj) {
+      throw new Error(`Object ${objName} does not exist`);
+    }
+    
+    obj.value = value;
+    logger.debug(`Mock instance ${this.id}: Set value for ${objName}: ${value}`);
   }
 } 

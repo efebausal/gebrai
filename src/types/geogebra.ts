@@ -91,6 +91,15 @@ export interface GeoGebraAPI {
   setAxesVisible(xAxis: boolean, yAxis: boolean): Promise<void>;
   setGridVisible(visible: boolean): Promise<void>;
   
+  // Animation methods
+  setAnimating(objName: string, animate: boolean): Promise<void>;
+  setAnimationSpeed(objName: string, speed: number): Promise<void>;
+  startAnimation(): Promise<void>;
+  stopAnimation(): Promise<void>;
+  isAnimationRunning(): Promise<boolean>;
+  setTrace(objName: string, flag: boolean): Promise<void>;
+  setValue(objName: string, value: number): Promise<void>;
+  
   // Instance management
   isReady(): Promise<boolean>;
   cleanup(): Promise<void>;

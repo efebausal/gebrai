@@ -380,4 +380,268 @@ export function validateFunctionStyling(color?: string, thickness?: number, styl
   }
 
   return { isValid: true };
+}
+
+/**
+ * Validate algebraic expression for CAS operations
+ */
+export function validateAlgebraicExpression(expression: string): ValidationResult {
+  if (!expression || typeof expression !== 'string') {
+    return { isValid: false, error: 'Expression must be a non-empty string' };
+  }
+
+  const trimmed = expression.trim();
+  if (trimmed.length === 0) {
+    return { isValid: false, error: 'Expression cannot be empty' };
+  }
+
+  // Allow common mathematical symbols, variables, and functions
+  const allowedPattern = /^[a-zA-Z\d\+\-\*\/\^\(\)\.\s,=]*$/;
+  if (!allowedPattern.test(trimmed)) {
+          return { 
+        isValid: false, 
+        error: 'Expression contains invalid characters. Use only variables, numbers, +, -, *, /, ^, =, ()' 
+      };
+  }
+
+  // Check for balanced parentheses
+  let parenCount = 0;
+  for (const char of trimmed) {
+    if (char === '(') parenCount++;
+    if (char === ')') parenCount--;
+    if (parenCount < 0) {
+      return { isValid: false, error: 'Unbalanced parentheses in expression' };
+    }
+  }
+  if (parenCount !== 0) {
+    return { isValid: false, error: 'Unbalanced parentheses in expression' };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Validate equation format for solving
+ */
+export function validateEquation(equation: string): ValidationResult {
+  if (!equation || typeof equation !== 'string') {
+    return { isValid: false, error: 'Equation must be a non-empty string' };
+  }
+
+  const trimmed = equation.trim();
+  if (trimmed.length === 0) {
+    return { isValid: false, error: 'Equation cannot be empty' };
+  }
+
+  // Check if equation contains exactly one equals sign
+  const equalsSigns = (trimmed.match(/=/g) || []).length;
+  if (equalsSigns === 0) {
+    return { isValid: false, error: 'Equation must contain an equals sign (=)' };
+  }
+  if (equalsSigns > 1) {
+    return { isValid: false, error: 'Equation cannot contain multiple equals signs' };
+  }
+
+  // Validate both sides of the equation
+  const parts = trimmed.split('=');
+  const leftSide = parts[0]?.trim() || '';
+  const rightSide = parts[1]?.trim() || '';
+  
+  const leftValidation = validateAlgebraicExpression(leftSide);
+  if (!leftValidation.isValid) {
+    return { isValid: false, error: `Left side of equation: ${leftValidation.error}` };
+  }
+
+  const rightValidation = validateAlgebraicExpression(rightSide);
+  if (!rightValidation.isValid) {
+    return { isValid: false, error: `Right side of equation: ${rightValidation.error}` };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Validate variable name for CAS operations
+ */
+export function validateVariableName(variable: string): ValidationResult {
+  if (!variable || typeof variable !== 'string') {
+    return { isValid: false, error: 'Variable name must be a non-empty string' };
+  }
+
+  const trimmed = variable.trim();
+  if (trimmed.length === 0) {
+    return { isValid: false, error: 'Variable name cannot be empty' };
+  }
+
+  // Variable must be a single letter or letter followed by digits/underscores
+  const variablePattern = /^[a-zA-Z][a-zA-Z0-9_]*$/;
+  if (!variablePattern.test(trimmed)) {
+    return { 
+      isValid: false, 
+      error: 'Variable name must start with a letter and contain only letters, numbers, and underscores' 
+    };
+  }
+
+  // Check for reserved function names
+  const reservedNames = ['sin', 'cos', 'tan', 'log', 'ln', 'abs', 'sqrt', 'exp', 'pi', 'e'];
+  if (reservedNames.includes(trimmed.toLowerCase())) {
+    return { isValid: false, error: `"${trimmed}" is a reserved function name and cannot be used as a variable` };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Validate system of equations
+ */
+export function validateSystemOfEquations(equations: string[]): ValidationResult {
+  if (!Array.isArray(equations)) {
+    return { isValid: false, error: 'Equations must be provided as an array' };
+  }
+
+  if (equations.length === 0) {
+    return { isValid: false, error: 'At least one equation must be provided' };
+  }
+
+  if (equations.length > 10) {
+    return { isValid: false, error: 'Cannot solve more than 10 equations simultaneously' };
+  }
+
+  // Validate each equation
+  for (let i = 0; i < equations.length; i++) {
+    const equation = equations[i];
+    if (equation === undefined || equation === null) {
+      return { isValid: false, error: `Equation ${i + 1} is undefined or null` };
+    }
+    const validation = validateEquation(equation);
+    if (!validation.isValid) {
+      return { isValid: false, error: `Equation ${i + 1}: ${validation.error}` };
+    }
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Validate variables list for system solving
+ */
+export function validateVariablesList(variables: string[]): ValidationResult {
+  if (!Array.isArray(variables)) {
+    return { isValid: false, error: 'Variables must be provided as an array' };
+  }
+
+  if (variables.length === 0) {
+    return { isValid: false, error: 'At least one variable must be specified' };
+  }
+
+  if (variables.length > 10) {
+    return { isValid: false, error: 'Cannot solve for more than 10 variables simultaneously' };
+  }
+
+  // Validate each variable name
+  for (let i = 0; i < variables.length; i++) {
+    const variable = variables[i];
+    if (variable === undefined || variable === null) {
+      return { isValid: false, error: `Variable ${i + 1} is undefined or null` };
+    }
+    const validation = validateVariableName(variable);
+    if (!validation.isValid) {
+      return { isValid: false, error: `Variable ${i + 1}: ${validation.error}` };
+    }
+  }
+
+  // Check for duplicate variables
+  const uniqueVars = new Set(variables);
+  if (uniqueVars.size !== variables.length) {
+    return { isValid: false, error: 'Variables list cannot contain duplicates' };
+  }
+
+  return { isValid: true };
+}
+
+/**
+ * Validates slider parameters for creation
+ */
+export function validateSliderParameters(
+  name: string, 
+  min: number, 
+  max: number, 
+  increment?: number,
+  defaultValue?: number
+): ValidationResult {
+  // Validate name
+  const nameValidation = validateObjectName(name);
+  if (!nameValidation.isValid) {
+    return nameValidation;
+  }
+  
+  // Validate range
+  if (min >= max) {
+    return { isValid: false, error: 'Minimum value must be less than maximum value' };
+  }
+  
+  // Validate increment
+  if (increment !== undefined && increment <= 0) {
+    return { isValid: false, error: 'Increment must be positive' };
+  }
+  
+  // Validate default value
+  if (defaultValue !== undefined && (defaultValue < min || defaultValue > max)) {
+    return { isValid: false, error: 'Default value must be within the specified range' };
+  }
+  
+  return { isValid: true };
+}
+
+/**
+ * Validates animation speed parameter
+ */
+export function validateAnimationSpeed(speed: number): ValidationResult {
+  if (speed <= 0) {
+    return { isValid: false, error: 'Animation speed must be positive' };
+  }
+  
+  if (speed > 10) {
+    return { isValid: false, error: 'Animation speed should not exceed 10 for reasonable performance' };
+  }
+  
+  return { isValid: true };
+}
+
+/**
+ * Validates animation direction parameter
+ */
+export function validateAnimationDirection(direction?: string): ValidationResult {
+  if (direction && !['forward', 'backward', 'oscillating'].includes(direction)) {
+    return { isValid: false, error: 'Animation direction must be "forward", "backward", or "oscillating"' };
+  }
+  
+  return { isValid: true };
+}
+
+/**
+ * Validates parameters for animation export
+ */
+export function validateAnimationExportParameters(
+  frameCount: number,
+  frameDelay: number,
+  totalDuration?: number
+): ValidationResult {
+  if (frameCount <= 0 || !Number.isInteger(frameCount)) {
+    return { isValid: false, error: 'Frame count must be a positive integer' };
+  }
+  
+  if (frameCount > 300) {
+    return { isValid: false, error: 'Frame count should not exceed 300 for reasonable file size' };
+  }
+  
+  if (frameDelay <= 0) {
+    return { isValid: false, error: 'Frame delay must be positive' };
+  }
+  
+  if (totalDuration !== undefined && totalDuration <= 0) {
+    return { isValid: false, error: 'Total duration must be positive' };
+  }
+  
+  return { isValid: true };
 } 

@@ -12,7 +12,16 @@ import {
   validateParametricExpressions,
   validateImplicitExpression,
   validateDomainRange,
-  validateFunctionStyling 
+  validateFunctionStyling,
+  validateAlgebraicExpression,
+  validateEquation,
+  validateVariableName,
+  validateSystemOfEquations,
+  validateVariablesList,
+  validateSliderParameters,
+  validateAnimationSpeed,
+  validateAnimationDirection,
+  validateAnimationExportParameters
 } from '../utils/validation';
 
 // Global instance pool for managing GeoGebra instances
@@ -1352,6 +1361,1106 @@ export const geogebraTools: ToolDefinition[] = [
         };
       } catch (error) {
         logger.error('Failed to plot implicit curve', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: false,
+              error: error instanceof Error ? error.message : String(error)
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+  },
+
+  // CAS (Computer Algebra System) Tools
+
+  {
+    tool: {
+      name: 'geogebra_solve_equation',
+      description: 'Solve algebraic equations using GeoGebra\'s CAS',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          equation: {
+            type: 'string',
+            description: 'The equation to solve (e.g., "x^2 - 4 = 0", "2x + 3 = 7")'
+          },
+          variable: {
+            type: 'string',
+            description: 'Variable to solve for (optional, defaults to automatic detection)'
+          }
+        },
+        required: ['equation']
+      }
+    },
+    handler: async (params) => {
+      try {
+        const equation = params['equation'] as string;
+        const variable = params['variable'] as string | undefined;
+
+        // Validate equation
+        const equationValidation = validateEquation(equation);
+        if (!equationValidation.isValid) {
+          throw new Error(`Invalid equation: ${equationValidation.error}`);
+        }
+
+        // Validate variable if provided
+        if (variable) {
+          const variableValidation = validateVariableName(variable);
+          if (!variableValidation.isValid) {
+            throw new Error(`Invalid variable: ${variableValidation.error}`);
+          }
+        }
+
+        const instance = await instancePool.getDefaultInstance();
+
+        // Create the solve command
+        const command = variable ? 
+          `Solve(${equation}, ${variable})` : 
+          `Solve(${equation})`;
+
+        const result = await instance.evalCommand(command);
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to solve equation');
+        }
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: true,
+              equation,
+              variable: variable || 'auto-detected',
+              command,
+              solution: result.result
+            }, null, 2)
+          }]
+        };
+      } catch (error) {
+        logger.error('Failed to solve equation', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: false,
+              error: error instanceof Error ? error.message : String(error)
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+  },
+
+  {
+    tool: {
+      name: 'geogebra_solve_system',
+      description: 'Solve a system of equations using GeoGebra\'s CAS',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          equations: {
+            type: 'array',
+            items: {
+              type: 'string'
+            },
+            description: 'Array of equations to solve (e.g., ["x + y = 5", "x - y = 1"])'
+          },
+          variables: {
+            type: 'array',
+            items: {
+              type: 'string'
+            },
+            description: 'Variables to solve for (e.g., ["x", "y"])'
+          }
+        },
+        required: ['equations', 'variables']
+      }
+    },
+    handler: async (params) => {
+      try {
+        const equations = params['equations'] as string[];
+        const variables = params['variables'] as string[];
+
+        // Validate equations
+        const equationsValidation = validateSystemOfEquations(equations);
+        if (!equationsValidation.isValid) {
+          throw new Error(`Invalid equations: ${equationsValidation.error}`);
+        }
+
+        // Validate variables
+        const variablesValidation = validateVariablesList(variables);
+        if (!variablesValidation.isValid) {
+          throw new Error(`Invalid variables: ${variablesValidation.error}`);
+        }
+
+        const instance = await instancePool.getDefaultInstance();
+
+        // Create the solve command for system of equations
+        const equationsStr = `{${equations.join(', ')}}`;
+        const variablesStr = `{${variables.join(', ')}}`;
+        const command = `Solve(${equationsStr}, ${variablesStr})`;
+
+        const result = await instance.evalCommand(command);
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to solve system of equations');
+        }
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: true,
+              equations,
+              variables,
+              command,
+              solution: result.result
+            }, null, 2)
+          }]
+        };
+      } catch (error) {
+        logger.error('Failed to solve system of equations', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: false,
+              error: error instanceof Error ? error.message : String(error)
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+  },
+
+  {
+    tool: {
+      name: 'geogebra_differentiate',
+      description: 'Compute the derivative of an expression using GeoGebra\'s CAS',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          expression: {
+            type: 'string',
+            description: 'The expression to differentiate (e.g., "x^2", "sin(x)", "x^3 + 2x + 1")'
+          },
+          variable: {
+            type: 'string',
+            description: 'Variable to differentiate with respect to (optional, defaults to "x")'
+          }
+        },
+        required: ['expression']
+      }
+    },
+    handler: async (params) => {
+      try {
+        const expression = params['expression'] as string;
+        const variable = (params['variable'] as string) || 'x';
+
+        // Validate expression
+        const expressionValidation = validateAlgebraicExpression(expression);
+        if (!expressionValidation.isValid) {
+          throw new Error(`Invalid expression: ${expressionValidation.error}`);
+        }
+
+        // Validate variable
+        const variableValidation = validateVariableName(variable);
+        if (!variableValidation.isValid) {
+          throw new Error(`Invalid variable: ${variableValidation.error}`);
+        }
+
+        const instance = await instancePool.getDefaultInstance();
+
+        // Create the derivative command
+        const command = `Derivative(${expression}, ${variable})`;
+
+        const result = await instance.evalCommand(command);
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to compute derivative');
+        }
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: true,
+              expression,
+              variable,
+              command,
+              derivative: result.result
+            }, null, 2)
+          }]
+        };
+      } catch (error) {
+        logger.error('Failed to compute derivative', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: false,
+              error: error instanceof Error ? error.message : String(error)
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+  },
+
+  {
+    tool: {
+      name: 'geogebra_integrate',
+      description: 'Compute the integral of an expression using GeoGebra\'s CAS',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          expression: {
+            type: 'string',
+            description: 'The expression to integrate (e.g., "x^2", "sin(x)", "2x + 1")'
+          },
+          variable: {
+            type: 'string',
+            description: 'Variable to integrate with respect to (optional, defaults to "x")'
+          }
+        },
+        required: ['expression']
+      }
+    },
+    handler: async (params) => {
+      try {
+        const expression = params['expression'] as string;
+        const variable = (params['variable'] as string) || 'x';
+
+        // Validate expression
+        const expressionValidation = validateAlgebraicExpression(expression);
+        if (!expressionValidation.isValid) {
+          throw new Error(`Invalid expression: ${expressionValidation.error}`);
+        }
+
+        // Validate variable
+        const variableValidation = validateVariableName(variable);
+        if (!variableValidation.isValid) {
+          throw new Error(`Invalid variable: ${variableValidation.error}`);
+        }
+
+        const instance = await instancePool.getDefaultInstance();
+
+        // Create the integral command
+        const command = `Integral(${expression}, ${variable})`;
+
+        const result = await instance.evalCommand(command);
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to compute integral');
+        }
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: true,
+              expression,
+              variable,
+              command,
+              integral: result.result
+            }, null, 2)
+          }]
+        };
+      } catch (error) {
+        logger.error('Failed to compute integral', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: false,
+              error: error instanceof Error ? error.message : String(error)
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+  },
+
+  {
+    tool: {
+      name: 'geogebra_simplify',
+      description: 'Simplify an algebraic expression using GeoGebra\'s CAS',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          expression: {
+            type: 'string',
+            description: 'The expression to simplify (e.g., "x^2 + 2x + 1", "(x+1)^2", "sin^2(x) + cos^2(x)")'
+          }
+        },
+        required: ['expression']
+      }
+    },
+    handler: async (params) => {
+      try {
+        const expression = params['expression'] as string;
+
+        // Validate expression
+        const expressionValidation = validateAlgebraicExpression(expression);
+        if (!expressionValidation.isValid) {
+          throw new Error(`Invalid expression: ${expressionValidation.error}`);
+        }
+
+        const instance = await instancePool.getDefaultInstance();
+
+        // Create the simplify command
+        const command = `Simplify(${expression})`;
+
+        const result = await instance.evalCommand(command);
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to simplify expression');
+        }
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: true,
+              expression,
+              command,
+              simplified: result.result
+            }, null, 2)
+          }]
+        };
+      } catch (error) {
+        logger.error('Failed to simplify expression', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: false,
+              error: error instanceof Error ? error.message : String(error)
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+  },
+
+  // Animation Tools - GEB-7 Implementation
+  {
+    tool: {
+      name: 'geogebra_create_slider',
+      description: 'Create an interactive slider for parameter control and animation',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          name: {
+            type: 'string',
+            description: 'Name of the slider (e.g., "a", "t", "speed")'
+          },
+          min: {
+            type: 'number',
+            description: 'Minimum value of the slider'
+          },
+          max: {
+            type: 'number',
+            description: 'Maximum value of the slider'
+          },
+          increment: {
+            type: 'number',
+            description: 'Step size for the slider (optional, defaults to 0.1)'
+          },
+          defaultValue: {
+            type: 'number',
+            description: 'Initial value of the slider (optional, defaults to minimum value)'
+          },
+          width: {
+            type: 'number',
+            description: 'Width of the slider in pixels (optional, defaults to 150)'
+          },
+          isAngle: {
+            type: 'boolean',
+            description: 'Whether the slider represents an angle (optional, defaults to false)'
+          },
+          horizontal: {
+            type: 'boolean',
+            description: 'Whether the slider is horizontal (optional, defaults to true)'
+          }
+        },
+        required: ['name', 'min', 'max']
+      }
+    },
+    handler: async (params) => {
+      try {
+        const name = params['name'] as string;
+        const min = params['min'] as number;
+        const max = params['max'] as number;
+        const increment = (params['increment'] as number) || 0.1;
+        const defaultValue = (params['defaultValue'] as number) || min;
+        const width = (params['width'] as number) || 150;
+        const isAngle = (params['isAngle'] as boolean) || false;
+        const horizontal = (params['horizontal'] as boolean) !== false;
+
+        // Validate parameters
+        const validation = validateSliderParameters(name, min, max, increment, defaultValue);
+        if (!validation.isValid) {
+          throw new Error(validation.error);
+        }
+
+        const instance = await instancePool.getDefaultInstance();
+
+        // Create GeoGebra slider command
+        const command = `${name} = Slider(${min}, ${max}, ${increment}, 1, ${width}, ${isAngle}, ${horizontal}, false, false)`;
+
+        const result = await instance.evalCommand(command);
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to create slider');
+        }
+
+        // Set the default value
+        await instance.setValue(name, defaultValue);
+
+        const sliderInfo = await instance.getObjectInfo(name);
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: true,
+              command,
+              slider: {
+                name,
+                min,
+                max,
+                increment,
+                currentValue: defaultValue,
+                width,
+                isAngle,
+                horizontal,
+                info: sliderInfo
+              }
+            }, null, 2)
+          }]
+        };
+      } catch (error) {
+        logger.error('Failed to create slider', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: false,
+              error: error instanceof Error ? error.message : String(error)
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+  },
+
+  {
+    tool: {
+      name: 'geogebra_animate_parameter',
+      description: 'Configure an object (especially sliders) for parameter-based animation',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          objectName: {
+            type: 'string',
+            description: 'Name of the object to animate (typically a slider or point on a path)'
+          },
+          animate: {
+            type: 'boolean',
+            description: 'Whether to enable or disable animation for this object'
+          },
+          speed: {
+            type: 'number',
+            description: 'Animation speed (optional, defaults to 1, valid range: 0.1 to 10)'
+          },
+          direction: {
+            type: 'string',
+            enum: ['forward', 'backward', 'oscillating'],
+            description: 'Animation direction (optional, defaults to "forward")'
+          }
+        },
+        required: ['objectName', 'animate']
+      }
+    },
+    handler: async (params) => {
+      try {
+        const objectName = params['objectName'] as string;
+        const animate = params['animate'] as boolean;
+        const speed = (params['speed'] as number) || 1;
+        const direction = (params['direction'] as string) || 'forward';
+
+        // Validate parameters
+        const nameValidation = validateObjectName(objectName);
+        if (!nameValidation.isValid) {
+          throw new Error(`Invalid object name: ${nameValidation.error}`);
+        }
+
+        const speedValidation = validateAnimationSpeed(speed);
+        if (!speedValidation.isValid) {
+          throw new Error(speedValidation.error);
+        }
+
+        const directionValidation = validateAnimationDirection(direction);
+        if (!directionValidation.isValid) {
+          throw new Error(directionValidation.error);
+        }
+
+        const instance = await instancePool.getDefaultInstance();
+
+        // Check if object exists
+        const exists = await instance.exists(objectName);
+        if (!exists) {
+          throw new Error(`Object ${objectName} does not exist`);
+        }
+
+        // Set animation properties
+        await instance.setAnimating(objectName, animate);
+        if (animate) {
+          await instance.setAnimationSpeed(objectName, speed);
+        }
+
+        const objectInfo = await instance.getObjectInfo(objectName);
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: true,
+              animation: {
+                objectName,
+                animate,
+                speed: animate ? speed : null,
+                direction,
+                objectInfo
+              }
+            }, null, 2)
+          }]
+        };
+      } catch (error) {
+        logger.error('Failed to configure animation', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: false,
+              error: error instanceof Error ? error.message : String(error)
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+  },
+
+  {
+    tool: {
+      name: 'geogebra_trace_object',
+      description: 'Enable or disable trace for an object to visualize its path during animation',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          objectName: {
+            type: 'string',
+            description: 'Name of the object to trace (typically animated points or curves)'
+          },
+          enableTrace: {
+            type: 'boolean',
+            description: 'Whether to enable or disable tracing for this object'
+          }
+        },
+        required: ['objectName', 'enableTrace']
+      }
+    },
+    handler: async (params) => {
+      try {
+        const objectName = params['objectName'] as string;
+        const enableTrace = params['enableTrace'] as boolean;
+
+        // Validate object name
+        const nameValidation = validateObjectName(objectName);
+        if (!nameValidation.isValid) {
+          throw new Error(`Invalid object name: ${nameValidation.error}`);
+        }
+
+        const instance = await instancePool.getDefaultInstance();
+
+        // Check if object exists
+        const exists = await instance.exists(objectName);
+        if (!exists) {
+          throw new Error(`Object ${objectName} does not exist`);
+        }
+
+        // Set trace
+        await instance.setTrace(objectName, enableTrace);
+
+        const objectInfo = await instance.getObjectInfo(objectName);
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: true,
+              trace: {
+                objectName,
+                enableTrace,
+                objectInfo
+              }
+            }, null, 2)
+          }]
+        };
+      } catch (error) {
+        logger.error('Failed to set trace', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: false,
+              error: error instanceof Error ? error.message : String(error)
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+  },
+
+  {
+    tool: {
+      name: 'geogebra_start_animation',
+      description: 'Start animation for all objects with animation enabled',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+        required: []
+      }
+    },
+    handler: async (_params) => {
+      try {
+        const instance = await instancePool.getDefaultInstance();
+
+        await instance.startAnimation();
+        const isRunning = await instance.isAnimationRunning();
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: true,
+              action: 'start_animation',
+              isRunning
+            }, null, 2)
+          }]
+        };
+      } catch (error) {
+        logger.error('Failed to start animation', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: false,
+              error: error instanceof Error ? error.message : String(error)
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+  },
+
+  {
+    tool: {
+      name: 'geogebra_stop_animation',
+      description: 'Stop all currently running animations',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+        required: []
+      }
+    },
+    handler: async (_params) => {
+      try {
+        const instance = await instancePool.getDefaultInstance();
+
+        await instance.stopAnimation();
+        const isRunning = await instance.isAnimationRunning();
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: true,
+              action: 'stop_animation',
+              isRunning
+            }, null, 2)
+          }]
+        };
+      } catch (error) {
+        logger.error('Failed to stop animation', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: false,
+              error: error instanceof Error ? error.message : String(error)
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+  },
+
+  {
+    tool: {
+      name: 'geogebra_animation_status',
+      description: 'Check the current status of animations',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+        required: []
+      }
+    },
+    handler: async (_params) => {
+      try {
+        const instance = await instancePool.getDefaultInstance();
+
+        const isRunning = await instance.isAnimationRunning();
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: true,
+              action: 'check_animation_status',
+              isRunning
+            }, null, 2)
+          }]
+        };
+      } catch (error) {
+        logger.error('Failed to check animation status', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: false,
+              error: error instanceof Error ? error.message : String(error)
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+  },
+
+  {
+    tool: {
+      name: 'geogebra_export_animation',
+      description: 'Export an animation as a sequence of frames for GIF creation',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          frameCount: {
+            type: 'number',
+            description: 'Number of frames to capture (default: 30, max: 300)'
+          },
+          frameDelay: {
+            type: 'number',
+            description: 'Delay between frames in milliseconds (default: 100)'
+          },
+          totalDuration: {
+            type: 'number',
+            description: 'Total animation duration in seconds (optional, calculated from frameCount and frameDelay if not provided)'
+          },
+          width: {
+            type: 'number',
+            description: 'Width of exported frames (optional, defaults to current view width)'
+          },
+          height: {
+            type: 'number',
+            description: 'Height of exported frames (optional, defaults to current view height)'
+          },
+          scale: {
+            type: 'number',
+            description: 'Scale factor for export quality (default: 1, range: 0.5 to 3)'
+          },
+          format: {
+            type: 'string',
+            enum: ['png', 'svg'],
+            description: 'Export format for frames (default: png)'
+          }
+        },
+        required: []
+      }
+    },
+    handler: async (params) => {
+      try {
+        const frameCount = Math.min((params['frameCount'] as number) || 30, 300);
+        const frameDelay = (params['frameDelay'] as number) || 100;
+        const totalDuration = (params['totalDuration'] as number) || ((frameCount * frameDelay) / 1000);
+        const width = params['width'] as number;
+        const height = params['height'] as number;
+        const scale = Math.min(Math.max((params['scale'] as number) || 1, 0.5), 3);
+        const format = (params['format'] as string) || 'png';
+
+        // Validate export parameters
+        const validation = validateAnimationExportParameters(frameCount, frameDelay, totalDuration);
+        if (!validation.isValid) {
+          throw new Error(validation.error);
+        }
+
+        const instance = await instancePool.getDefaultInstance();
+
+        // Check if any animations are set up
+        const allObjects = await instance.getAllObjectNames();
+        const hasAnimatedObjects = allObjects && allObjects.length > 0; // In a real implementation, we'd check for animated objects
+
+        if (!hasAnimatedObjects) {
+          throw new Error('No objects found. Create and configure animated objects before exporting animation.');
+        }
+
+        // Capture frames
+        const frames: string[] = [];
+        const captureInterval = totalDuration / frameCount;
+
+        logger.info(`Starting animation export: ${frameCount} frames over ${totalDuration}s`);
+
+        // Start animation
+        await instance.startAnimation();
+
+        for (let i = 0; i < frameCount; i++) {
+          // Wait for the appropriate time interval
+          if (i > 0) {
+            await new Promise(resolve => setTimeout(resolve, captureInterval * 1000));
+          }
+
+          // Capture frame
+          let frameData: string;
+          if (format === 'svg') {
+            frameData = await instance.exportSVG();
+          } else {
+            frameData = await instance.exportPNG(scale, false, 72, width, height);
+          }
+
+          frames.push(frameData);
+          logger.debug(`Captured frame ${i + 1}/${frameCount}`);
+        }
+
+        // Stop animation
+        await instance.stopAnimation();
+
+        logger.info(`Animation export completed: ${frames.length} frames captured`);
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: true,
+              export: {
+                frameCount: frames.length,
+                frameDelay,
+                totalDuration,
+                format,
+                scale,
+                dimensions: width && height ? { width, height } : null,
+                frames: frames.slice(0, 3), // Only return first 3 frames in response for brevity
+                note: `Captured ${frames.length} frames. In a full implementation, these would be processed into a GIF file.`,
+                implementation_note: "Frame data contains base64 encoded images that can be processed into GIF format using libraries like 'gif-encoder' or 'gifski'"
+              }
+            }, null, 2)
+          }]
+        };
+      } catch (error) {
+        logger.error('Failed to export animation', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: false,
+              error: error instanceof Error ? error.message : String(error)
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+  },
+
+  {
+    tool: {
+      name: 'geogebra_animation_demo',
+      description: 'Create a comprehensive animation demonstration with parametric curves, traced objects, and animated sliders',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          demoType: {
+            type: 'string',
+            enum: ['parametric_spiral', 'pendulum', 'wave_function', 'circle_trace'],
+            description: 'Type of animation demo to create (default: parametric_spiral)'
+          },
+          animationSpeed: {
+            type: 'number',
+            description: 'Animation speed (default: 1, range: 0.1 to 5)'
+          }
+        },
+        required: []
+      }
+    },
+    handler: async (params) => {
+      try {
+        const demoType = (params['demoType'] as string) || 'parametric_spiral';
+        const animationSpeed = Math.min(Math.max((params['animationSpeed'] as number) || 1, 0.1), 5);
+
+        const instance = await instancePool.getDefaultInstance();
+
+        // Clear any existing construction
+        await instance.newConstruction();
+
+        let createdObjects: string[] = [];
+        let animatedObjects: string[] = [];
+
+        switch (demoType) {
+          case 'parametric_spiral':
+            // Create time parameter slider
+            await instance.evalCommand('t = Slider(0, 4*pi, 0.1, 1, 200, false, true, false, false)');
+            await instance.setValue('t', 0);
+            createdObjects.push('t');
+
+            // Create parametric spiral
+            await instance.evalCommand('spiralX(s) = s * cos(s)');
+            await instance.evalCommand('spiralY(s) = s * sin(s)');
+            await instance.evalCommand('spiral = Curve(spiralX(s), spiralY(s), s, 0, t)');
+            createdObjects.push('spiral');
+
+            // Create moving point on spiral
+            await instance.evalCommand('P = (spiralX(t), spiralY(t))');
+            createdObjects.push('P');
+
+            // Enable animation and tracing
+            await instance.setAnimating('t', true);
+            await instance.setAnimationSpeed('t', animationSpeed);
+            await instance.setTrace('P', true);
+            animatedObjects.push('t');
+            break;
+
+          case 'pendulum':
+            // Create angle slider
+            await instance.evalCommand('angle = Slider(-pi/2, pi/2, 0.05, 1, 200, true, true, false, false)');
+            await instance.setValue('angle', 0);
+            createdObjects.push('angle');
+
+            // Create pendulum setup
+            await instance.evalCommand('origin = (0, 0)');
+            await instance.evalCommand('length = 3');
+            await instance.evalCommand('pendulumX = length * sin(angle)');
+            await instance.evalCommand('pendulumY = -length * cos(angle)');
+            await instance.evalCommand('bob = (pendulumX, pendulumY)');
+            await instance.evalCommand('rod = Segment(origin, bob)');
+            createdObjects.push('origin', 'bob', 'rod');
+
+            // Enable animation and tracing
+            await instance.setAnimating('angle', true);
+            await instance.setAnimationSpeed('angle', animationSpeed);
+            await instance.setTrace('bob', true);
+            animatedObjects.push('angle');
+            break;
+
+          case 'wave_function':
+            // Create time and frequency sliders
+            await instance.evalCommand('time = Slider(0, 4*pi, 0.1, 1, 150, false, true, false, false)');
+            await instance.evalCommand('freq = Slider(0.5, 3, 0.1, 1, 150, false, true, false, false)');
+            await instance.setValue('time', 0);
+            await instance.setValue('freq', 1);
+            createdObjects.push('time', 'freq');
+
+            // Create wave function
+            await instance.evalCommand('wave(x) = sin(freq * x + time)');
+            await instance.evalCommand('f = wave(x)');
+            createdObjects.push('f');
+
+            // Create a point that moves along the wave
+            await instance.evalCommand('wavePoint = (time, sin(freq * time + time))');
+            createdObjects.push('wavePoint');
+
+            // Enable animation and tracing
+            await instance.setAnimating('time', true);
+            await instance.setAnimationSpeed('time', animationSpeed);
+            await instance.setTrace('wavePoint', true);
+            animatedObjects.push('time');
+            break;
+
+          case 'circle_trace':
+            // Create angle slider
+            await instance.evalCommand('theta = Slider(0, 4*pi, 0.1, 1, 200, true, true, false, false)');
+            await instance.setValue('theta', 0);
+            createdObjects.push('theta');
+
+            // Create circles and tracing points
+            await instance.evalCommand('radius1 = 2');
+            await instance.evalCommand('radius2 = 1');
+            await instance.evalCommand('center1 = (0, 0)');
+            await instance.evalCommand('center2 = (radius1 * cos(theta), radius1 * sin(theta))');
+            await instance.evalCommand('circle1 = Circle(center1, radius1)');
+            await instance.evalCommand('circle2 = Circle(center2, radius2)');
+            createdObjects.push('circle1', 'circle2', 'center1', 'center2');
+
+            // Create epicycloid trace point
+            await instance.evalCommand('traceX = (radius1 + radius2) * cos(theta) - radius2 * cos((radius1 + radius2) / radius2 * theta)');
+            await instance.evalCommand('traceY = (radius1 + radius2) * sin(theta) - radius2 * sin((radius1 + radius2) / radius2 * theta)');
+            await instance.evalCommand('tracePoint = (traceX, traceY)');
+            createdObjects.push('tracePoint');
+
+            // Enable animation and tracing
+            await instance.setAnimating('theta', true);
+            await instance.setAnimationSpeed('theta', animationSpeed);
+            await instance.setTrace('tracePoint', true);
+            await instance.setTrace('center2', true);
+            animatedObjects.push('theta');
+            break;
+
+          default:
+            throw new Error(`Unknown demo type: ${demoType}`);
+        }
+
+        // Set up coordinate system for better viewing
+        await instance.setCoordSystem(-6, 6, -6, 6);
+        await instance.setAxesVisible(true, true);
+        await instance.setGridVisible(true);
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: true,
+              demo: {
+                type: demoType,
+                animationSpeed,
+                createdObjects,
+                animatedObjects,
+                message: `Animation demo '${demoType}' created successfully!`,
+                instructions: [
+                  'Use geogebra_start_animation to begin the animation',
+                  'Use geogebra_stop_animation to pause it',
+                  'Use geogebra_animation_status to check if it\'s running',
+                  'Use geogebra_export_animation to capture frames for GIF creation',
+                  'Objects with tracing enabled will show their paths during animation'
+                ]
+              }
+            }, null, 2)
+          }]
+        };
+      } catch (error) {
+        logger.error('Failed to create animation demo', error);
         return {
           content: [{
             type: 'text' as const,
