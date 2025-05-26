@@ -249,10 +249,6 @@ NODE_ENV=development
 - Use conventional commit messages
 - Ensure code passes linting
 
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
 ## 🔗 Related Projects
 
 - [Model Context Protocol](https://modelcontextprotocol.io/)
@@ -268,6 +264,3 @@ For questions, issues, or contributions, please:
 3. Join our community discussions
 
 ---
-
-**Status**: ✅ Core Foundation Complete (GEB-1)  
-**Next Phase**: GeoGebra Integration (GEB-2) 
