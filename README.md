@@ -100,88 +100,77 @@ npm run test:watch
 npm run test:coverage
 ```
 
-## 📡 MCP Protocol
+## 📚 Documentation
 
-The server implements the Model Context Protocol (MCP) following JSON-RPC 2.0 specification.
+For comprehensive documentation, visit our [**complete documentation**](docs/README.md) which includes:
 
-### Supported Methods
+### 📖 Core Documentation
+- **[API Reference](docs/api/README.md)** - Complete tool documentation with examples
+- **[Getting Started Guide](docs/guides/getting-started.md)** - Step-by-step setup and first usage
+- **[Integration Guide](docs/guides/integration-guide.md)** - Platform integration instructions
+- **[Troubleshooting](docs/support/troubleshooting.md)** - Common issues and solutions
+- **[FAQ](docs/support/faq.md)** - Frequently asked questions
 
-#### `tools/list`
+### 🔧 Tool Categories
+- **[Basic Tools](docs/api/basic-tools.md)** - Core MCP functionality (ping, echo, server_info)
+- **[GeoGebra Tools](docs/api/geogebra-tools.md)** - 25+ mathematical construction tools
+- **[Educational Tools](docs/api/educational-tools.md)** - Pre-built educational templates
+- **[Performance Tools](docs/api/performance-tools.md)** - Monitoring and optimization
 
-Returns a list of available tools.
+### 🎓 Educational Resources
+- **[Use Cases](docs/educational/use-cases.md)** - Real-world educational scenarios
+- **[Teacher Guide](docs/educational/teacher-guide.md)** - Pedagogical guidance
+- **[Classroom Examples](docs/educational/classroom-examples.md)** - Ready-to-use lessons
 
-**Request:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "tools/list",
-  "id": 1
-}
+### 📝 Tutorials & Examples
+- **[Basic Usage](docs/tutorials/basic-usage.md)** - Your first mathematical constructions
+- **[Mathematical Constructions](docs/tutorials/mathematical-constructions.md)** - Geometry and algebra
+- **[Function Plotting](docs/tutorials/function-plotting.md)** - Creating mathematical functions
+- **[Code Examples](docs/examples/)** - Working examples by complexity
+
+## 🚀 Quick Start
+
+1. **Install and Setup**:
+```bash
+git clone <repository-url>
+cd gebrai
+npm install
+npm run build
+npm start
 ```
 
-**Response:**
+2. **Connect to Claude Desktop** - Add to your Claude configuration:
 ```json
 {
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": {
-    "tools": [
-      {
-        "name": "ping",
-        "description": "Simple ping tool that returns pong",
-        "inputSchema": {
-          "type": "object",
-          "properties": {},
-          "required": []
-        }
-      }
-    ]
-  }
-}
-```
-
-#### `tools/call`
-
-Executes a specific tool with given parameters.
-
-**Request:**
-```json
-{
-  "jsonrpc": "2.0",
-  "method": "tools/call",
-  "params": {
-    "name": "echo",
-    "arguments": {
-      "message": "Hello, MCP!"
+  "mcpServers": {
+    "geogebra": {
+      "command": "node",
+      "args": ["/path/to/gebrai/dist/index.js"],
+      "cwd": "/path/to/gebrai"
     }
-  },
-  "id": 2
-}
-```
-
-**Response:**
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 2,
-  "result": {
-    "content": [
-      {
-        "type": "text",
-        "text": "Echo: Hello, MCP!"
-      }
-    ]
   }
 }
 ```
+
+3. **Start Creating** - Ask Claude to create mathematical visualizations!
+
+**Need help?** Check our [Getting Started Guide](docs/guides/getting-started.md) for detailed instructions.
+
+## 📊 Tool Overview
+
+The GeoGebra MCP Tool provides **40+ tools** across four categories:
+
+| Category | Tools | Description | Performance |
+|----------|-------|-------------|-------------|
+| **Basic** | 3 tools | Core MCP functionality | < 100ms |
+| **GeoGebra** | 25+ tools | Mathematical constructions | < 2000ms |
+| **Educational** | 10+ tools | Classroom activities | < 2000ms |
+| **Performance** | 5 tools | Monitoring & optimization | < 500ms |
 
 ### Example Tools
-
-The server includes several example tools for testing:
-
-- **ping**: Simple connectivity test
-- **echo**: Echo back a provided message
-- **server_info**: Get server status and information
+- **Mathematical**: `geogebra_create_point`, `geogebra_plot_function`, `geogebra_export_png`
+- **Educational**: `geogebra_list_educational_templates`, `geogebra_create_lesson_plan`  
+- **Performance**: `performance_get_stats`, `performance_warm_up_pool`
 
 ## 🔧 Configuration
 

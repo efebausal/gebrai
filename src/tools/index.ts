@@ -3,6 +3,7 @@ import { errors } from '../utils/errors';
 import logger from '../utils/logger';
 import { geogebraTools } from './geogebra-tools';
 import { educationalTemplateTools } from './educational-templates';
+import { performanceTools } from './performance-tools';
 
 /**
  * Tool Registry for managing MCP tools
@@ -156,5 +157,10 @@ geogebraTools.forEach(tool => {
 
 // Register Educational Template tools
 educationalTemplateTools.forEach(tool => {
+  toolRegistry.register(tool);
+});
+
+// Register Performance tools
+performanceTools.forEach(tool => {
   toolRegistry.register(tool);
 }); 

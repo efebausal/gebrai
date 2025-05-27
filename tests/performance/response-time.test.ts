@@ -85,8 +85,7 @@ describe('Performance Tests - Response Time Requirements', () => {
     it('simple command execution should meet performance requirements', async () => {
              const mockResult = {
          success: true,
-         result: undefined,
-         error: undefined
+         result: 'ok'
        };
       
       // Simulate realistic GeoGebra response time (typically 50-200ms)
@@ -106,8 +105,7 @@ describe('Performance Tests - Response Time Requirements', () => {
     it('complex command execution should meet performance requirements', async () => {
              const mockResult = {
          success: true,
-         result: undefined,
-         error: undefined
+         result: 'ok'
        };
       
       // Simulate more complex operation (typically 200-500ms)
@@ -217,8 +215,7 @@ describe('Performance Tests - Response Time Requirements', () => {
              mockGeoGebraInstance.evalCommand.mockImplementation(() => 
          new Promise(resolve => setTimeout(() => resolve({
            success: true,
-           result: undefined,
-           error: undefined
+           result: 'ok'
          }), 200))
        );
 
@@ -233,7 +230,7 @@ describe('Performance Tests - Response Time Requirements', () => {
       const results = await Promise.all(operations);
 
       // Each individual operation should meet requirements
-      results.forEach(({ executionTime }, index) => {
+      results.forEach(({ executionTime }) => {
         expect(executionTime).toBeLessThan(MAX_RESPONSE_TIME);
       });
 
@@ -251,13 +248,12 @@ describe('Performance Tests - Response Time Requirements', () => {
       const pingResult = await measureExecutionTime(async () => {
         return await registry.executeTool('ping', {});
       });
-      benchmarks.ping = pingResult.executionTime;
+      benchmarks['ping'] = pingResult.executionTime;
 
              // Benchmark simple command
        mockGeoGebraInstance.evalCommand.mockResolvedValue({
          success: true,
-         result: undefined,
-         error: undefined
+         result: 'ok'
        });
 
       const commandResult = await measureExecutionTime(async () => {
@@ -265,7 +261,7 @@ describe('Performance Tests - Response Time Requirements', () => {
           command: 'A = (1, 2)'
         });
       });
-      benchmarks.simpleCommand = commandResult.executionTime;
+      benchmarks['simpleCommand'] = commandResult.executionTime;
 
       // Benchmark status check
       mockGeoGebraInstance.isReady.mockResolvedValue(true);
@@ -279,13 +275,13 @@ describe('Performance Tests - Response Time Requirements', () => {
       const statusResult = await measureExecutionTime(async () => {
         return await registry.executeTool('geogebra_instance_status', {});
       });
-      benchmarks.status = statusResult.executionTime;
+      benchmarks['status'] = statusResult.executionTime;
 
       // Log benchmarks for monitoring
       console.log('Performance Benchmarks:', benchmarks);
 
       // Verify all benchmarks meet requirements
-      Object.entries(benchmarks).forEach(([operation, time]) => {
+      Object.entries(benchmarks).forEach(([, time]) => {
         expect(time).toBeLessThan(MAX_RESPONSE_TIME);
       });
 

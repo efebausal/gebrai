@@ -7,8 +7,7 @@ module.exports = {
     '**/?(*.)+(spec|test).ts'
   ],
   testPathIgnorePatterns: [
-    '/node_modules/',
-    '/tests/performance/'  // Temporarily exclude performance tests
+    '/node_modules/'
   ],
   transform: {
     '^.+\\.ts$': 'ts-jest'
