@@ -1,8 +1,80 @@
+// Mock GeoGebraInstance BEFORE any imports to ensure the instance pool uses our mock
+let globalMockInstance: any;
+
+jest.mock('../../src/utils/geogebra-instance', () => {
+  return {
+    GeoGebraInstance: jest.fn().mockImplementation(() => {
+      // Return the global mock instance that will be set up in beforeEach
+      return globalMockInstance || {
+        evalCommand: jest.fn().mockResolvedValue({ success: true, result: 'fallback' }),
+        getAllObjectNames: jest.fn().mockResolvedValue([]),
+        getObjectInfo: jest.fn().mockResolvedValue({ name: 'fallback', type: 'point', visible: true, defined: true }),
+        newConstruction: jest.fn().mockResolvedValue(undefined),
+        exportPNG: jest.fn().mockResolvedValue('base64-data'),
+        exportSVG: jest.fn().mockResolvedValue('<svg></svg>'),
+        exportPDF: jest.fn().mockResolvedValue('pdf-data'),
+        isReady: jest.fn().mockResolvedValue(true),
+        cleanup: jest.fn().mockResolvedValue(undefined),
+        getState: jest.fn().mockReturnValue({ id: 'fallback-id', isReady: true, lastActivity: new Date(), config: { appName: 'classic' } }),
+        initialize: jest.fn().mockResolvedValue(undefined),
+        setCoordSystem: jest.fn().mockResolvedValue(undefined),
+        setAxesVisible: jest.fn().mockResolvedValue(undefined),
+        setGridVisible: jest.fn().mockResolvedValue(undefined),
+      };
+    })
+  };
+});
+
+// Mock logger
+jest.mock('../../src/utils/logger', () => ({
+  info: jest.fn(),
+  debug: jest.fn(),
+  error: jest.fn(),
+  warn: jest.fn(),
+}));
+
 import { toolRegistry } from '../../src/tools';
+import { GeoGebraInstance } from '../../src/utils/geogebra-instance';
 
 describe('Function Plotting Tools (GEB-5)', () => {
+  let mockGeoGebraInstance: jest.Mocked<GeoGebraInstance>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    
+    // Setup mock GeoGebra instance
+    mockGeoGebraInstance = {
+      evalCommand: jest.fn(),
+      isReady: jest.fn(),
+      cleanup: jest.fn(),
+      getState: jest.fn(),
+      initialize: jest.fn(),
+      getAllObjectNames: jest.fn(),
+      getObjectInfo: jest.fn(),
+      newConstruction: jest.fn(),
+      setCoordSystem: jest.fn(),
+      setAxesVisible: jest.fn(),
+      setGridVisible: jest.fn(),
+      exportPNG: jest.fn(),
+      exportSVG: jest.fn(),
+    } as any;
+
+    // Update the global mock instance so new instances created by the tools use this one
+    globalMockInstance = mockGeoGebraInstance;
+  });
+
   describe('Standard Function Plotting (geogebra_plot_function)', () => {
     it('should plot a simple quadratic function', async () => {
+      // Mock specific function info for this test
+      mockGeoGebraInstance.getObjectInfo.mockResolvedValueOnce({
+        name: 'f',
+        type: 'function',
+        value: 'x^2',
+        visible: true,
+        defined: true,
+        color: '#FF0000'
+      });
+      
       const result = await toolRegistry.executeTool('geogebra_plot_function', {
         name: 'f',
         expression: 'x^2'
@@ -267,6 +339,19 @@ describe('Function Plotting Tools (GEB-5)', () => {
 
   describe('Function Plotting Integration', () => {
     it('should plot multiple functions of different types', async () => {
+      // Setup mocks for the geogebra_get_objects call at the end
+      const objectInfoMap = {
+        'f1': { name: 'f1', type: 'function', value: 'x^2', visible: true, defined: true, color: '#FF0000' },
+        'f2': { name: 'f2', type: 'curve', value: 'parametric', visible: true, defined: true, color: '#00FF00' },
+        'f3': { name: 'f3', type: 'implicitcurve', value: 'x^2 + y^2 - 1', visible: true, defined: true, color: '#0000FF' }
+      };
+      
+      // Override getAllObjectNames and getObjectInfo to work together
+      mockGeoGebraInstance.getAllObjectNames.mockResolvedValue(['f1', 'f2', 'f3']);
+      mockGeoGebraInstance.getObjectInfo.mockImplementation((name: string) => {
+        return Promise.resolve(objectInfoMap[name as keyof typeof objectInfoMap] || null);
+      });
+
       // Clear construction first
       await toolRegistry.executeTool('geogebra_clear_construction', {});
 

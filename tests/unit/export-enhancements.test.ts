@@ -1,6 +1,53 @@
 import { toolRegistry } from '../../src/tools';
+import { GeoGebraInstance } from '../../src/utils/geogebra-instance';
+
+// Mock GeoGebraInstance
+jest.mock('../../src/utils/geogebra-instance');
+
+// Mock logger
+jest.mock('../../src/utils/logger', () => ({
+  info: jest.fn(),
+  debug: jest.fn(),
+  error: jest.fn(),
+  warn: jest.fn(),
+}));
 
 describe('Enhanced Export Functionality (GEB-4)', () => {
+  let mockGeoGebraInstance: jest.Mocked<GeoGebraInstance>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    
+    // Setup mock GeoGebra instance
+    mockGeoGebraInstance = {
+      exportPNG: jest.fn(),
+      exportSVG: jest.fn(),
+      exportPDF: jest.fn(),
+      setCoordSystem: jest.fn(),
+      setAxesVisible: jest.fn(),
+      setGridVisible: jest.fn(),
+      isReady: jest.fn(),
+      cleanup: jest.fn(),
+      getState: jest.fn(),
+      initialize: jest.fn(),
+      evalCommand: jest.fn(),
+      getAllObjectNames: jest.fn(),
+      getObjectInfo: jest.fn(),
+      newConstruction: jest.fn(),
+    } as any;
+
+    // Mock the GeoGebraInstance constructor 
+    (GeoGebraInstance as jest.MockedClass<typeof GeoGebraInstance>).mockImplementation(() => mockGeoGebraInstance);
+    
+    // Setup default return values for successful exports
+    mockGeoGebraInstance.exportPNG.mockResolvedValue('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==');
+    mockGeoGebraInstance.exportSVG.mockResolvedValue('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><rect width="800" height="600" fill="white"/></svg>');
+    mockGeoGebraInstance.setCoordSystem.mockResolvedValue(undefined);
+    mockGeoGebraInstance.setAxesVisible.mockResolvedValue(undefined);
+    mockGeoGebraInstance.setGridVisible.mockResolvedValue(undefined);
+    mockGeoGebraInstance.initialize.mockResolvedValue(undefined);
+  });
+
   describe('PNG Export with Enhanced Parameters', () => {
     it('should export PNG with basic parameters', async () => {
       const result = await toolRegistry.executeTool('geogebra_export_png', {

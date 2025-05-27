@@ -1,6 +1,6 @@
 import { ToolDefinition } from '../types/mcp';
-import { MockGeoGebraInstance } from '../utils/geogebra-mock';
-// import { GeoGebraInstance } from '../utils/geogebra-instance'; // Real implementation (requires browser)
+// import { MockGeoGebraInstance } from '../utils/geogebra-mock'; // Mock implementation for testing
+import { GeoGebraInstance } from '../utils/geogebra-instance'; // Real implementation (production)
 import logger from '../utils/logger';
 import { 
   validateObjectName, 
@@ -26,13 +26,13 @@ import {
 
 // Global instance pool for managing GeoGebra instances
 class GeoGebraInstancePool {
-  private instances: Map<string, MockGeoGebraInstance> = new Map();
-  private defaultInstance: MockGeoGebraInstance | undefined;
+  private instances: Map<string, GeoGebraInstance> = new Map();
+  private defaultInstance: GeoGebraInstance | undefined;
 
-  async getDefaultInstance(): Promise<MockGeoGebraInstance> {
+  async getDefaultInstance(): Promise<GeoGebraInstance> {
     if (!this.defaultInstance) {
-      this.defaultInstance = new MockGeoGebraInstance({
-        appName: 'graphing',
+      this.defaultInstance = new GeoGebraInstance({
+        appName: 'classic', // Use classic app for full functionality (from GEB-12 fixes)
         width: 800,
         height: 600,
         showMenuBar: false,
@@ -41,8 +41,8 @@ class GeoGebraInstancePool {
       });
       
       try {
-        await this.defaultInstance.initialize();
-        logger.info('Default Mock GeoGebra instance initialized');
+        await this.defaultInstance.initialize(true); // Initialize in headless mode for production
+        logger.info('Default Real GeoGebra instance initialized');
       } catch (error) {
         logger.error('Failed to initialize default GeoGebra instance', error);
         throw error;
@@ -2205,7 +2205,7 @@ export const geogebraTools: ToolDefinition[] = [
     },
     handler: async (params) => {
       try {
-        const frameCount = Math.min((params['frameCount'] as number) || 30, 300);
+        const frameCount = (params['frameCount'] as number) || 30;
         const frameDelay = (params['frameDelay'] as number) || 100;
         const totalDuration = (params['totalDuration'] as number) || ((frameCount * frameDelay) / 1000);
         const width = params['width'] as number;
@@ -2213,7 +2213,7 @@ export const geogebraTools: ToolDefinition[] = [
         const scale = Math.min(Math.max((params['scale'] as number) || 1, 0.5), 3);
         const format = (params['format'] as string) || 'png';
 
-        // Validate export parameters
+        // Validate export parameters FIRST before any other operations
         const validation = validateAnimationExportParameters(frameCount, frameDelay, totalDuration);
         if (!validation.isValid) {
           throw new Error(validation.error);
@@ -2461,6 +2461,264 @@ export const geogebraTools: ToolDefinition[] = [
         };
       } catch (error) {
         logger.error('Failed to create animation demo', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: false,
+              error: error instanceof Error ? error.message : String(error)
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+  },
+
+  // Missing Tools Implementation
+  {
+    tool: {
+      name: 'geogebra_create_line_segment',
+      description: 'Create a line segment in GeoGebra between two points',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          name: {
+            type: 'string',
+            description: 'Name of the line segment (e.g., "AB", "segment1")'
+          },
+          point1: {
+            type: 'string',
+            description: 'Name of the first point'
+          },
+          point2: {
+            type: 'string',
+            description: 'Name of the second point'
+          },
+          color: {
+            type: 'string',
+            description: 'Color of the line segment (hex format, e.g., "#FF0000")'
+          },
+          thickness: {
+            type: 'number',
+            description: 'Thickness of the line segment (1-10)',
+            minimum: 1,
+            maximum: 10
+          },
+          style: {
+            type: 'string',
+            enum: ['solid', 'dashed', 'dotted'],
+            description: 'Line style (default: solid)'
+          }
+        },
+        required: ['name', 'point1', 'point2']
+      }
+    },
+    handler: async (params) => {
+      try {
+        const name = params['name'] as string;
+        const point1 = params['point1'] as string;
+        const point2 = params['point2'] as string;
+        const color = params['color'] as string | undefined;
+        const thickness = params['thickness'] as number | undefined;
+        const style = params['style'] as string | undefined;
+        
+        // Validate segment name
+        const nameValidation = validateObjectName(name);
+        if (!nameValidation.isValid) {
+          throw new Error(`Invalid segment name: ${nameValidation.error}`);
+        }
+        
+        // Validate point names
+        const point1Validation = validateObjectName(point1);
+        if (!point1Validation.isValid) {
+          throw new Error(`Invalid first point name: ${point1Validation.error}`);
+        }
+        
+        const point2Validation = validateObjectName(point2);
+        if (!point2Validation.isValid) {
+          throw new Error(`Invalid second point name: ${point2Validation.error}`);
+        }
+        
+        const instance = await instancePool.getDefaultInstance();
+        
+        // Create the line segment
+        const command = `${name} = Segment(${point1}, ${point2})`;
+        const result = await instance.evalCommand(command);
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to create line segment');
+        }
+        
+        // Apply styling if provided
+        const styleCommands: string[] = [];
+        
+        if (color) {
+          styleCommands.push(`SetColor(${name}, "${color}")`);
+        }
+        
+        if (thickness) {
+          styleCommands.push(`SetLineThickness(${name}, ${thickness})`);
+        }
+        
+        if (style && style !== 'solid') {
+          const lineType = style === 'dashed' ? '10' : '20';
+          styleCommands.push(`SetLineStyle(${name}, ${lineType})`);
+        }
+
+        // Execute styling commands
+        for (const styleCmd of styleCommands) {
+          await instance.evalCommand(styleCmd);
+        }
+
+        const segmentInfo = await instance.getObjectInfo(name);
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: true,
+              command,
+              segment: segmentInfo,
+              styling: {
+                color,
+                thickness,
+                style
+              }
+            }, null, 2)
+          }]
+        };
+      } catch (error) {
+        logger.error('Failed to create line segment', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: false,
+              error: error instanceof Error ? error.message : String(error)
+            }, null, 2)
+          }],
+          isError: true
+        };
+      }
+    }
+  },
+
+  {
+    tool: {
+      name: 'geogebra_create_text',
+      description: 'Create a text object in GeoGebra with specified content and position',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          text: {
+            type: 'string',
+            description: 'Text content to display (can include GeoGebra expressions in quotes)'
+          },
+          x: {
+            type: 'number',
+            description: 'X coordinate for text position'
+          },
+          y: {
+            type: 'number',
+            description: 'Y coordinate for text position'
+          },
+          fontSize: {
+            type: 'number',
+            description: 'Font size in points (default: 12)',
+            minimum: 8,
+            maximum: 72
+          },
+          color: {
+            type: 'string',
+            description: 'Text color (hex format, e.g., "#000000")'
+          },
+          fontStyle: {
+            type: 'string',
+            enum: ['normal', 'bold', 'italic'],
+            description: 'Font style (default: normal)'
+          },
+          name: {
+            type: 'string',
+            description: 'Optional name for the text object (auto-generated if not provided)'
+          }
+        },
+        required: ['text', 'x', 'y']
+      }
+    },
+    handler: async (params) => {
+      try {
+        const text = params['text'] as string;
+        const x = params['x'] as number;
+        const y = params['y'] as number;
+        const fontSize = (params['fontSize'] as number) || 12;
+        const color = params['color'] as string | undefined;
+        const fontStyle = (params['fontStyle'] as string) || 'normal';
+        const name = (params['name'] as string) || `text_${Date.now()}`;
+        
+        // Validate text object name
+        const nameValidation = validateObjectName(name);
+        if (!nameValidation.isValid) {
+          throw new Error(`Invalid text name: ${nameValidation.error}`);
+        }
+        
+        // Validate coordinates
+        const coordValidation = validateCoordinates(x, y);
+        if (!coordValidation.isValid) {
+          throw new Error(`Invalid coordinates: ${coordValidation.error}`);
+        }
+        
+        const instance = await instancePool.getDefaultInstance();
+        
+        // Create the text object
+        const command = `${name} = Text(${text}, (${x}, ${y}))`;
+        const result = await instance.evalCommand(command);
+        
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to create text');
+        }
+        
+        // Apply styling if provided
+        const styleCommands: string[] = [];
+        
+        if (color) {
+          styleCommands.push(`SetColor(${name}, "${color}")`);
+        }
+        
+        if (fontSize !== 12) {
+          styleCommands.push(`SetTextSize(${name}, ${fontSize})`);
+        }
+        
+        if (fontStyle !== 'normal') {
+          const styleNumber = fontStyle === 'bold' ? '1' : fontStyle === 'italic' ? '2' : '0';
+          styleCommands.push(`SetTextStyle(${name}, ${styleNumber})`);
+        }
+
+        // Execute styling commands
+        for (const styleCmd of styleCommands) {
+          await instance.evalCommand(styleCmd);
+        }
+
+        const textInfo = await instance.getObjectInfo(name);
+
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              success: true,
+              command,
+              textObject: textInfo,
+              position: { x, y },
+              styling: {
+                fontSize,
+                color,
+                fontStyle
+              }
+            }, null, 2)
+          }]
+        };
+      } catch (error) {
+        logger.error('Failed to create text', error);
         return {
           content: [{
             type: 'text' as const,

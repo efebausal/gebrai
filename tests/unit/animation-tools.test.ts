@@ -3,47 +3,98 @@
  * Tests for GEB-7: Animation System Implementation
  */
 
-import { toolRegistry } from '../../src/tools';
-import { MockGeoGebraInstance } from '../../src/utils/geogebra-mock';
+// Mock GeoGebraInstance BEFORE any imports to ensure the instance pool uses our mock
+let globalMockInstance: any;
 
-// Mock the instance pool to use our mock
-jest.mock('../../src/utils/geogebra-mock');
+jest.mock('../../src/utils/geogebra-instance', () => {
+  return {
+    GeoGebraInstance: jest.fn().mockImplementation(() => {
+      // Return the global mock instance that will be set up in beforeEach
+      return globalMockInstance || {
+        evalCommand: jest.fn().mockResolvedValue({ success: true, result: 'fallback' }),
+        getAllObjectNames: jest.fn().mockResolvedValue([]),
+        getObjectInfo: jest.fn().mockResolvedValue({ name: 'fallback', type: 'point', visible: true, defined: true }),
+        newConstruction: jest.fn().mockResolvedValue(undefined),
+        exportPNG: jest.fn().mockResolvedValue('base64-data'),
+        exportSVG: jest.fn().mockResolvedValue('<svg></svg>'),
+        exportPDF: jest.fn().mockResolvedValue('pdf-data'),
+        isReady: jest.fn().mockResolvedValue(true),
+        cleanup: jest.fn().mockResolvedValue(undefined),
+        getState: jest.fn().mockReturnValue({ id: 'fallback-id', isReady: true, lastActivity: new Date(), config: { appName: 'classic' } }),
+        initialize: jest.fn().mockResolvedValue(undefined),
+        setCoordSystem: jest.fn().mockResolvedValue(undefined),
+        setAxesVisible: jest.fn().mockResolvedValue(undefined),
+        setGridVisible: jest.fn().mockResolvedValue(undefined),
+        setAnimating: jest.fn().mockResolvedValue(undefined),
+        setAnimationSpeed: jest.fn().mockResolvedValue(undefined),
+        startAnimation: jest.fn().mockResolvedValue(undefined),
+        stopAnimation: jest.fn().mockResolvedValue(undefined),
+        isAnimationRunning: jest.fn().mockResolvedValue(false),
+        setTracing: jest.fn().mockResolvedValue(undefined),
+        clearTrace: jest.fn().mockResolvedValue(undefined),
+        exists: jest.fn().mockResolvedValue(true),
+      };
+    })
+  };
+});
+
+// Mock logger
+jest.mock('../../src/utils/logger', () => ({
+  info: jest.fn(),
+  debug: jest.fn(),
+  error: jest.fn(),
+  warn: jest.fn(),
+}));
+
+import { toolRegistry } from '../../src/tools';
+import { GeoGebraInstance } from '../../src/utils/geogebra-instance';
 
 describe('Animation Tools (GEB-7)', () => {
-  let mockInstance: jest.Mocked<MockGeoGebraInstance>;
+  let mockGeoGebraInstance: jest.Mocked<GeoGebraInstance>;
 
   beforeEach(() => {
+    jest.clearAllMocks();
     
-    // Create a mock instance
-    mockInstance = {
+    // Setup mock GeoGebra instance
+    mockGeoGebraInstance = {
       evalCommand: jest.fn(),
-      setValue: jest.fn(),
+      getAllObjectNames: jest.fn().mockResolvedValue(['slider1', 'point1']), // Default to having some objects
+      getObjectInfo: jest.fn(),
+      newConstruction: jest.fn(),
+      exportPNG: jest.fn().mockResolvedValue('base64-data'),
+      exportSVG: jest.fn().mockResolvedValue('<svg></svg>'),
+      exportPDF: jest.fn(),
+      isReady: jest.fn(),
+      cleanup: jest.fn(),
+      getState: jest.fn(),
+      initialize: jest.fn(),
+      setCoordSystem: jest.fn(),
+      setAxesVisible: jest.fn(),
+      setGridVisible: jest.fn(),
       setAnimating: jest.fn(),
       setAnimationSpeed: jest.fn(),
       startAnimation: jest.fn(),
       stopAnimation: jest.fn(),
-      isAnimationRunning: jest.fn(),
-      setTrace: jest.fn(),
-      exists: jest.fn(),
-      getObjectInfo: jest.fn(),
-      getAllObjectNames: jest.fn(),
-      newConstruction: jest.fn(),
-      setCoordSystem: jest.fn(),
-      setAxesVisible: jest.fn(),
-      setGridVisible: jest.fn(),
-      exportPNG: jest.fn(),
-      exportSVG: jest.fn(),
-    } as any;
+      isAnimationRunning: jest.fn().mockResolvedValue(true), // Default to animation running
+      setTracing: jest.fn(), // Fixed typo: was setTracing, should be setTrace
+              setTrace: jest.fn(), // Add the correct method name
+        clearTrace: jest.fn(),
+        exists: jest.fn().mockResolvedValue(true), // Default to object existing
+        setValue: jest.fn(), // Add missing setValue method
+      } as any;
 
-    // Reset all mocks
-    jest.clearAllMocks();
+      // Update the global mock instance so new instances created by the tools use this one
+      globalMockInstance = mockGeoGebraInstance;
+      
+      // Clear all mock history to ensure clean state for each test
+      jest.clearAllMocks();
   });
 
   describe('geogebra_create_slider', () => {
     it('should create a slider with basic parameters', async () => {
-      mockInstance.evalCommand.mockResolvedValue({ success: true });
-      mockInstance.setValue.mockResolvedValue();
-      mockInstance.getObjectInfo.mockResolvedValue({
+      mockGeoGebraInstance.evalCommand.mockResolvedValue({ success: true });
+      mockGeoGebraInstance.setValue.mockResolvedValue();
+      mockGeoGebraInstance.getObjectInfo.mockResolvedValue({
         name: 'testSlider',
         type: 'slider',
         visible: true,
@@ -79,9 +130,9 @@ describe('Animation Tools (GEB-7)', () => {
     });
 
     it('should create slider with advanced parameters', async () => {
-      mockInstance.evalCommand.mockResolvedValue({ success: true });
-      mockInstance.setValue.mockResolvedValue();
-      mockInstance.getObjectInfo.mockResolvedValue({
+      mockGeoGebraInstance.evalCommand.mockResolvedValue({ success: true });
+      mockGeoGebraInstance.setValue.mockResolvedValue();
+      mockGeoGebraInstance.getObjectInfo.mockResolvedValue({
         name: 'angleSlider',
         type: 'slider',
         visible: true,
@@ -111,10 +162,10 @@ describe('Animation Tools (GEB-7)', () => {
 
   describe('geogebra_animate_parameter', () => {
     it('should enable animation for an object', async () => {
-      mockInstance.exists.mockResolvedValue(true);
-      mockInstance.setAnimating.mockResolvedValue();
-      mockInstance.setAnimationSpeed.mockResolvedValue();
-      mockInstance.getObjectInfo.mockResolvedValue({
+      mockGeoGebraInstance.exists.mockResolvedValue(true);
+      mockGeoGebraInstance.setAnimating.mockResolvedValue();
+      mockGeoGebraInstance.setAnimationSpeed.mockResolvedValue();
+      mockGeoGebraInstance.getObjectInfo.mockResolvedValue({
         name: 'testSlider',
         type: 'slider',
         visible: true,
@@ -136,9 +187,9 @@ describe('Animation Tools (GEB-7)', () => {
     });
 
     it('should disable animation for an object', async () => {
-      mockInstance.exists.mockResolvedValue(true);
-      mockInstance.setAnimating.mockResolvedValue();
-      mockInstance.getObjectInfo.mockResolvedValue({
+      mockGeoGebraInstance.exists.mockResolvedValue(true);
+      mockGeoGebraInstance.setAnimating.mockResolvedValue();
+      mockGeoGebraInstance.getObjectInfo.mockResolvedValue({
         name: 'testSlider',
         type: 'slider',
         visible: true,
@@ -172,7 +223,9 @@ describe('Animation Tools (GEB-7)', () => {
     });
 
     it('should check if object exists', async () => {
-      mockInstance.exists.mockResolvedValue(false);
+      // Update global mock instance to return false for exists
+      globalMockInstance.exists = jest.fn().mockResolvedValue(false);
+      mockGeoGebraInstance.exists = globalMockInstance.exists;
 
       const result = await toolRegistry.executeTool('geogebra_animate_parameter', {
         objectName: 'nonExistentObject',
@@ -188,9 +241,9 @@ describe('Animation Tools (GEB-7)', () => {
 
   describe('geogebra_trace_object', () => {
     it('should enable tracing for an object', async () => {
-      mockInstance.exists.mockResolvedValue(true);
-      mockInstance.setTrace.mockResolvedValue();
-      mockInstance.getObjectInfo.mockResolvedValue({
+      mockGeoGebraInstance.exists.mockResolvedValue(true);
+      mockGeoGebraInstance.setTrace.mockResolvedValue();
+      mockGeoGebraInstance.getObjectInfo.mockResolvedValue({
         name: 'movingPoint',
         type: 'point',
         visible: true,
@@ -211,9 +264,9 @@ describe('Animation Tools (GEB-7)', () => {
     });
 
     it('should disable tracing for an object', async () => {
-      mockInstance.exists.mockResolvedValue(true);
-      mockInstance.setTrace.mockResolvedValue();
-      mockInstance.getObjectInfo.mockResolvedValue({
+      mockGeoGebraInstance.exists.mockResolvedValue(true);
+      mockGeoGebraInstance.setTrace.mockResolvedValue();
+      mockGeoGebraInstance.getObjectInfo.mockResolvedValue({
         name: 'movingPoint',
         type: 'point',
         visible: true,
@@ -236,8 +289,8 @@ describe('Animation Tools (GEB-7)', () => {
 
   describe('geogebra_start_animation', () => {
     it('should start all animations', async () => {
-      mockInstance.startAnimation.mockResolvedValue();
-      mockInstance.isAnimationRunning.mockResolvedValue(true);
+      mockGeoGebraInstance.startAnimation.mockResolvedValue();
+      mockGeoGebraInstance.isAnimationRunning.mockResolvedValue(true);
 
       const result = await toolRegistry.executeTool('geogebra_start_animation', {});
 
@@ -251,8 +304,10 @@ describe('Animation Tools (GEB-7)', () => {
 
   describe('geogebra_stop_animation', () => {
     it('should stop all animations', async () => {
-      mockInstance.stopAnimation.mockResolvedValue();
-      mockInstance.isAnimationRunning.mockResolvedValue(false);
+      // Update global mock instance to return false for isAnimationRunning
+      mockGeoGebraInstance.stopAnimation.mockResolvedValue(undefined);
+      globalMockInstance.isAnimationRunning = jest.fn().mockResolvedValue(false);
+      mockGeoGebraInstance.isAnimationRunning = globalMockInstance.isAnimationRunning;
 
       const result = await toolRegistry.executeTool('geogebra_stop_animation', {});
 
@@ -266,7 +321,7 @@ describe('Animation Tools (GEB-7)', () => {
 
   describe('geogebra_animation_status', () => {
     it('should check animation status', async () => {
-      mockInstance.isAnimationRunning.mockResolvedValue(true);
+      mockGeoGebraInstance.isAnimationRunning.mockResolvedValue(true);
 
       const result = await toolRegistry.executeTool('geogebra_animation_status', {});
 
@@ -280,10 +335,11 @@ describe('Animation Tools (GEB-7)', () => {
 
   describe('geogebra_export_animation', () => {
     it('should export animation frames', async () => {
-      mockInstance.getAllObjectNames.mockResolvedValue(['slider1', 'point1', 'curve1']);
-      mockInstance.startAnimation.mockResolvedValue();
-      mockInstance.stopAnimation.mockResolvedValue();
-      mockInstance.exportPNG.mockResolvedValue('base64-frame-data');
+      // Set up mock to have objects available
+      mockGeoGebraInstance.getAllObjectNames.mockResolvedValueOnce(['slider1', 'point1', 'curve1']);
+      mockGeoGebraInstance.startAnimation.mockResolvedValue(undefined);
+      mockGeoGebraInstance.stopAnimation.mockResolvedValue(undefined);
+      mockGeoGebraInstance.exportPNG.mockResolvedValue('base64-frame-data');
 
       const result = await toolRegistry.executeTool('geogebra_export_animation', {
         frameCount: 10,
@@ -300,6 +356,7 @@ describe('Animation Tools (GEB-7)', () => {
     });
 
     it('should validate export parameters', async () => {
+      // No need to set up getAllObjectNames mock since validation should happen first
       const result = await toolRegistry.executeTool('geogebra_export_animation', {
         frameCount: 500,  // Invalid: > 300
         frameDelay: 100
@@ -314,15 +371,15 @@ describe('Animation Tools (GEB-7)', () => {
 
   describe('geogebra_animation_demo', () => {
     beforeEach(() => {
-      mockInstance.newConstruction.mockResolvedValue();
-      mockInstance.evalCommand.mockResolvedValue({ success: true });
-      mockInstance.setValue.mockResolvedValue();
-      mockInstance.setAnimating.mockResolvedValue();
-      mockInstance.setAnimationSpeed.mockResolvedValue();
-      mockInstance.setTrace.mockResolvedValue();
-      mockInstance.setCoordSystem.mockResolvedValue();
-      mockInstance.setAxesVisible.mockResolvedValue();
-      mockInstance.setGridVisible.mockResolvedValue();
+      mockGeoGebraInstance.newConstruction.mockResolvedValue();
+      mockGeoGebraInstance.evalCommand.mockResolvedValue({ success: true });
+      mockGeoGebraInstance.setValue.mockResolvedValue();
+      mockGeoGebraInstance.setAnimating.mockResolvedValue();
+      mockGeoGebraInstance.setAnimationSpeed.mockResolvedValue();
+      mockGeoGebraInstance.setTrace.mockResolvedValue();
+      mockGeoGebraInstance.setCoordSystem.mockResolvedValue();
+      mockGeoGebraInstance.setAxesVisible.mockResolvedValue();
+      mockGeoGebraInstance.setGridVisible.mockResolvedValue();
     });
 
     it('should create parametric spiral demo', async () => {

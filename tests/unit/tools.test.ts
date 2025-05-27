@@ -1,8 +1,29 @@
-import { ToolRegistry, toolRegistry } from '../../src/tools';
-import { GeoGebraInstance } from '../../src/utils/geogebra-instance';
+// Mock GeoGebraInstance BEFORE any imports to ensure the instance pool uses our mock
+let globalMockInstance: any;
 
-// Mock GeoGebraInstance
-jest.mock('../../src/utils/geogebra-instance');
+jest.mock('../../src/utils/geogebra-instance', () => {
+  return {
+    GeoGebraInstance: jest.fn().mockImplementation(() => {
+      // Return the global mock instance that will be set up in beforeEach
+      return globalMockInstance || {
+        evalCommand: jest.fn().mockResolvedValue({ success: true, result: 'fallback' }),
+        getAllObjectNames: jest.fn().mockResolvedValue([]),
+        getObjectInfo: jest.fn().mockResolvedValue({ name: 'fallback', type: 'point', visible: true, defined: true }),
+        newConstruction: jest.fn().mockResolvedValue(undefined),
+        exportPNG: jest.fn().mockResolvedValue('base64-data'),
+        exportSVG: jest.fn().mockResolvedValue('<svg></svg>'),
+        exportPDF: jest.fn().mockResolvedValue('pdf-data'),
+        isReady: jest.fn().mockResolvedValue(true),
+        cleanup: jest.fn().mockResolvedValue(undefined),
+        getState: jest.fn().mockReturnValue({ id: 'fallback-id', isReady: true, lastActivity: new Date(), config: { appName: 'classic' } }),
+        initialize: jest.fn().mockResolvedValue(undefined),
+        setCoordSystem: jest.fn().mockResolvedValue(undefined),
+        setAxesVisible: jest.fn().mockResolvedValue(undefined),
+        setGridVisible: jest.fn().mockResolvedValue(undefined),
+      };
+    })
+  };
+});
 
 // Mock logger
 jest.mock('../../src/utils/logger', () => ({
@@ -12,6 +33,10 @@ jest.mock('../../src/utils/logger', () => ({
   warn: jest.fn(),
 }));
 
+// NOW import the modules - they will use our mocked GeoGebraInstance
+import { ToolRegistry, toolRegistry } from '../../src/tools';
+import { GeoGebraInstance } from '../../src/utils/geogebra-instance';
+
 describe('ToolRegistry', () => {
   let registry: ToolRegistry;
   let mockGeoGebraInstance: jest.Mocked<GeoGebraInstance>;
@@ -19,7 +44,8 @@ describe('ToolRegistry', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     
-    // Setup mock GeoGebra instance
+    // Setup mock GeoGebra instance - using jest.fn() without default values
+    // Each test will set up the specific responses it needs
     mockGeoGebraInstance = {
       evalCommand: jest.fn(),
       getAllObjectNames: jest.fn(),
@@ -31,10 +57,14 @@ describe('ToolRegistry', () => {
       isReady: jest.fn(),
       cleanup: jest.fn(),
       getState: jest.fn(),
+      initialize: jest.fn(),
+      setCoordSystem: jest.fn(),
+      setAxesVisible: jest.fn(),
+      setGridVisible: jest.fn(),
     } as any;
 
-    // Mock the GeoGebraInstance constructor
-    (GeoGebraInstance as jest.MockedClass<typeof GeoGebraInstance>).mockImplementation(() => mockGeoGebraInstance);
+    // Update the global mock instance so new instances created by the tools use this one
+    globalMockInstance = mockGeoGebraInstance;
     
     // Use the global registry that has all tools registered
     registry = toolRegistry;
@@ -87,10 +117,7 @@ describe('ToolRegistry', () => {
         expect(result.content).toBeDefined();
         expect(result.content[0]).toBeDefined();
         expect(result.content[0]?.type).toBe('text');
-        
-        const response = JSON.parse(result.content[0]?.text!);
-        expect(response.message).toBe('pong');
-        expect(response.timestamp).toBeDefined();
+        expect(result.content[0]?.text).toBe('pong');
       });
     });
 
@@ -112,8 +139,8 @@ describe('ToolRegistry', () => {
         
         const response = JSON.parse(result.content[0]?.text!);
         expect(response.success).toBe(true);
-        expect(response.ready).toBe(true);
-        expect(response.instanceId).toBe('test-id');
+        expect(response.status.isReady).toBe(true);
+        expect(response.status.instanceId).toBe('test-id');
       });
 
       it('should handle not ready instance', async () => {
@@ -129,7 +156,7 @@ describe('ToolRegistry', () => {
         
         const response = JSON.parse(result.content[0]?.text!);
         expect(response.success).toBe(true);
-        expect(response.ready).toBe(false);
+        expect(response.status.isReady).toBe(false);
       });
     });
 
@@ -168,7 +195,10 @@ describe('ToolRegistry', () => {
       });
 
       it('should require command parameter', async () => {
-        await expect(registry.executeTool('geogebra_eval_command', {})).rejects.toThrow();
+        const result = await registry.executeTool('geogebra_eval_command', {});
+        const response = JSON.parse(result.content[0]?.text!);
+        expect(response.success).toBe(false);
+        expect(response.error).toContain('command');
       });
     });
 
@@ -179,6 +209,14 @@ describe('ToolRegistry', () => {
           result: 'point created'
         };
         mockGeoGebraInstance.evalCommand.mockResolvedValue(mockResult);
+        mockGeoGebraInstance.getObjectInfo.mockResolvedValue({
+          name: 'B',
+          type: 'point',
+          visible: true,
+          defined: true,
+          x: 3,
+          y: 4
+        });
 
         const result = await registry.executeTool('geogebra_create_point', {
           name: 'B',
@@ -198,6 +236,15 @@ describe('ToolRegistry', () => {
           result: 'point created'
         };
         mockGeoGebraInstance.evalCommand.mockResolvedValue(mockResult);
+        mockGeoGebraInstance.getObjectInfo.mockResolvedValue({
+          name: 'C',
+          type: 'point',
+          visible: true,
+          defined: true,
+          x: 1,
+          y: 2,
+          z: 3
+        });
 
         await registry.executeTool('geogebra_create_point', {
           name: 'C',
@@ -210,9 +257,17 @@ describe('ToolRegistry', () => {
       });
 
       it('should require name, x, and y parameters', async () => {
-        await expect(registry.executeTool('geogebra_create_point', { x: 1, y: 2 })).rejects.toThrow();
-        await expect(registry.executeTool('geogebra_create_point', { name: 'A', y: 2 })).rejects.toThrow();
-        await expect(registry.executeTool('geogebra_create_point', { name: 'A', x: 1 })).rejects.toThrow();
+        let result = await registry.executeTool('geogebra_create_point', { x: 1, y: 2 });
+        let response = JSON.parse(result.content[0]?.text!);
+        expect(response.success).toBe(false);
+        
+        result = await registry.executeTool('geogebra_create_point', { name: 'A', y: 2 });
+        response = JSON.parse(result.content[0]?.text!);
+        expect(response.success).toBe(false);
+        
+        result = await registry.executeTool('geogebra_create_point', { name: 'A', x: 1 });
+        response = JSON.parse(result.content[0]?.text!);
+        expect(response.success).toBe(false);
       });
     });
 
@@ -251,36 +306,53 @@ describe('ToolRegistry', () => {
         const result = await registry.executeTool('geogebra_get_objects', {});
         
         const response = JSON.parse(result.content[0]?.text!);
+        expect(response.success).toBe(true);
         expect(response.objectCount).toBe(0);
         expect(response.objects).toEqual([]);
       });
     });
 
     describe('geogebra_export_png tool', () => {
+      beforeEach(() => {
+        // Add missing mock methods for export PNG
+        mockGeoGebraInstance.setCoordSystem = jest.fn().mockResolvedValue(undefined);
+        mockGeoGebraInstance.setAxesVisible = jest.fn().mockResolvedValue(undefined);
+        mockGeoGebraInstance.setGridVisible = jest.fn().mockResolvedValue(undefined);
+      });
+
       it('should export PNG successfully', async () => {
         const mockBase64 = 'base64-encoded-image-data';
         mockGeoGebraInstance.exportPNG.mockResolvedValue(mockBase64);
 
-        await registry.executeTool('geogebra_export_png', {
+        const result = await registry.executeTool('geogebra_export_png', {
           scale: 2
         });
         
-        expect(mockGeoGebraInstance.exportPNG).toHaveBeenCalledWith(2);
+        const response = JSON.parse(result.content[0]?.text!);
+        expect(response.success).toBe(true);
+        expect(response.format).toBe('PNG');
+        expect(response.scale).toBe(2);
       });
 
       it('should use default scale', async () => {
         const mockBase64 = 'base64-encoded-image-data';
         mockGeoGebraInstance.exportPNG.mockResolvedValue(mockBase64);
 
-        await registry.executeTool('geogebra_export_png', {});
+        const result = await registry.executeTool('geogebra_export_png', {});
         
-        expect(mockGeoGebraInstance.exportPNG).toHaveBeenCalledWith(1);
+        const response = JSON.parse(result.content[0]?.text!);
+        expect(response.success).toBe(true);
+        expect(response.format).toBe('PNG');
+        expect(response.scale).toBe(1);
       });
 
       it('should handle export failure', async () => {
         mockGeoGebraInstance.exportPNG.mockRejectedValue(new Error('Export failed'));
 
-        await expect(registry.executeTool('geogebra_export_png', {})).rejects.toThrow();
+        const result = await registry.executeTool('geogebra_export_png', {});
+        const response = JSON.parse(result.content[0]?.text!);
+        expect(response.success).toBe(false);
+        expect(response.error).toContain('Export failed');
       });
     });
 
@@ -300,7 +372,10 @@ describe('ToolRegistry', () => {
       it('should handle clear failure', async () => {
         mockGeoGebraInstance.newConstruction.mockRejectedValue(new Error('Clear failed'));
 
-        await expect(registry.executeTool('geogebra_clear_construction', {})).rejects.toThrow();
+        const result = await registry.executeTool('geogebra_clear_construction', {});
+        const response = JSON.parse(result.content[0]?.text!);
+        expect(response.success).toBe(false);
+        expect(response.error).toContain('Clear failed');
       });
     });
   });
@@ -313,9 +388,12 @@ describe('ToolRegistry', () => {
     it('should handle tool execution errors', async () => {
       mockGeoGebraInstance.evalCommand.mockRejectedValue(new Error('Execution failed'));
 
-      await expect(registry.executeTool('geogebra_eval_command', {
+      const result = await registry.executeTool('geogebra_eval_command', {
         command: 'A = (1, 2)'
-      })).rejects.toThrow();
+      });
+      const response = JSON.parse(result.content[0]?.text!);
+      expect(response.success).toBe(false);
+      expect(response.error).toContain('Execution failed');
     });
   });
 

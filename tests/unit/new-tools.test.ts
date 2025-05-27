@@ -1,6 +1,50 @@
 import { toolRegistry } from '../../src/tools';
+import { GeoGebraInstance } from '../../src/utils/geogebra-instance';
+
+// Mock GeoGebraInstance
+jest.mock('../../src/utils/geogebra-instance');
+
+// Mock logger
+jest.mock('../../src/utils/logger', () => ({
+  info: jest.fn(),
+  debug: jest.fn(),
+  error: jest.fn(),
+  warn: jest.fn(),
+}));
 
 describe('GEB-3: Core Geometric Construction Tools', () => {
+  let mockGeoGebraInstance: jest.Mocked<GeoGebraInstance>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    
+    // Setup mock GeoGebra instance
+    mockGeoGebraInstance = {
+      evalCommand: jest.fn(),
+      isReady: jest.fn(),
+      cleanup: jest.fn(),
+      getState: jest.fn(),
+      initialize: jest.fn(),
+      getAllObjectNames: jest.fn(),
+      getObjectInfo: jest.fn(),
+      newConstruction: jest.fn(),
+      setCoordSystem: jest.fn(),
+      setAxesVisible: jest.fn(),
+      setGridVisible: jest.fn(),
+      exportPNG: jest.fn(),
+      exportSVG: jest.fn(),
+    } as any;
+
+    // Mock the GeoGebraInstance constructor 
+    (GeoGebraInstance as jest.MockedClass<typeof GeoGebraInstance>).mockImplementation(() => mockGeoGebraInstance);
+    
+    // Setup default return values for successful geometric constructions
+    mockGeoGebraInstance.evalCommand.mockResolvedValue({ success: true, result: 'success' });
+    mockGeoGebraInstance.initialize.mockResolvedValue(undefined);
+    mockGeoGebraInstance.isReady.mockResolvedValue(true);
+    mockGeoGebraInstance.getAllObjectNames.mockResolvedValue([]);
+  });
+
   describe('Tool Registration', () => {
     it('should have all required geometric construction tools', () => {
       const tools = toolRegistry.getTools();

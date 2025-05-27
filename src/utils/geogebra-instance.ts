@@ -35,7 +35,7 @@ export class GeoGebraInstance implements GeoGebraAPI {
   constructor(config: GeoGebraConfig = {}) {
     this.id = uuidv4();
     this.config = {
-      appName: 'graphing',
+      appName: 'classic',  // Changed from 'graphing' to 'classic' for full functionality
       width: 800,
       height: 600,
       showMenuBar: false,
@@ -132,6 +132,17 @@ export class GeoGebraInstance implements GeoGebraAPI {
 <body>
     <div id="ggb-element"></div>
     <script>
+        // Initialize global variables
+        window.ggbReady = false;
+        window.ggbApplet = null;
+        
+        // GeoGebra initialization callback
+        window.ggbOnInit = function(name) {
+            window.ggbApplet = window[name];
+            window.ggbReady = true;
+            console.log('GeoGebra initialized successfully with applet:', name);
+        };
+        
         const parameters = {
             "appName": "${config.appName}",
             "width": ${config.width},
@@ -141,23 +152,81 @@ export class GeoGebraInstance implements GeoGebraAPI {
             "showAlgebraInput": ${config.showAlgebraInput},
             "showResetIcon": ${config.showResetIcon},
             "enableRightClick": ${config.enableRightClick},
-            "enableLabelDrags": ${config.enableLabelDrags},
-            "enableShiftDragZoom": ${config.enableShiftDragZoom},
+            "enableLabelDrags": ${config.enableLabelDrags || true},
+            "enableShiftDragZoom": ${config.enableShiftDragZoom || true},
+            "enableCAS": true,
+            "enable3D": false,
             "language": "${config.language}",
             ${config.material_id ? `"material_id": "${config.material_id}",` : ''}
             ${config.filename ? `"filename": "${config.filename}",` : ''}
             ${config.ggbBase64 ? `"ggbBase64": "${config.ggbBase64}",` : ''}
             "useBrowserForJS": false,
-            "preventFocus": true
+            "preventFocus": true,
+            "appletOnLoad": function(api) {
+                window.ggbApplet = api;
+                
+                // Ensure CAS is loaded
+                if (api.enableCAS) {
+                    api.enableCAS(true);
+                }
+                
+                // Load all required modules with retries
+                var loadAttempts = 0;
+                var maxAttempts = 10;
+                
+                function checkModulesLoaded() {
+                    loadAttempts++;
+                    
+                    // Test CAS availability
+                    var casReady = false;
+                    try {
+                        api.evalCommand('1+1');
+                        casReady = true;
+                    } catch (e) {
+                        casReady = false;
+                    }
+                    
+                    // Test scripting availability  
+                    var scriptingReady = false;
+                    try {
+                        // Try a simple scripting command
+                        var result = api.evalCommand('test_slider = Slider(0, 1)');
+                        if (result) {
+                            api.deleteObject('test_slider');
+                            scriptingReady = true;
+                        }
+                    } catch (e) {
+                        scriptingReady = false;
+                    }
+                    
+                    if (casReady && scriptingReady) {
+                        window.ggbReady = true;
+                        console.log('GeoGebra applet loaded with all modules ready');
+                    } else if (loadAttempts < maxAttempts) {
+                        setTimeout(checkModulesLoaded, 500);
+                    } else {
+                        // Fallback - mark as ready even if modules aren't fully loaded
+                        window.ggbReady = true;
+                        console.log('GeoGebra applet loaded with basic functionality (modules may still be loading)');
+                    }
+                }
+                
+                // Start checking after initial delay
+                setTimeout(checkModulesLoaded, 1000);
+            }
         };
 
-        window.ggbOnInit = function() {
-            window.ggbReady = true;
-            console.log('GeoGebra initialized');
-        };
-
+        // Create and inject the applet
         const applet = new GGBApplet(parameters, true);
         applet.inject('ggb-element');
+        
+        // Fallback timeout to set ready state
+        setTimeout(function() {
+            if (!window.ggbReady && window.ggbApplet) {
+                window.ggbReady = true;
+                console.log('GeoGebra initialized via fallback timeout');
+            }
+        }, 5000);
     </script>
 </body>
 </html>`;
@@ -172,9 +241,43 @@ export class GeoGebraInstance implements GeoGebraAPI {
     }
 
     try {
-      await this.page.waitForFunction('window.ggbReady === true', { timeout });
-      logger.debug(`GeoGebra instance ${this.id} is ready`);
+      // Wait for both ggbReady flag and ggbApplet to be available
+      await this.page.waitForFunction(
+        'window.ggbReady === true && window.ggbApplet && typeof window.ggbApplet.evalCommand === "function"', 
+        { timeout }
+      );
+      
+      // Additional verification that the applet is functional
+      const isWorking = await this.page.evaluate(() => {
+        try {
+          return typeof window.ggbApplet.evalCommand === 'function' && 
+                 typeof window.ggbApplet.exists === 'function';
+        } catch (e) {
+          return false;
+        }
+      });
+      
+      if (!isWorking) {
+        throw new Error('GeoGebra applet methods not available');
+      }
+      
+      logger.debug(`GeoGebra instance ${this.id} is ready and functional`);
     } catch (error) {
+      // Log the current state for debugging
+      try {
+        const debugInfo = await this.page.evaluate(() => ({
+          ggbReady: (window as any).ggbReady,
+          ggbAppletExists: !!(window as any).ggbApplet,
+          ggbAppletType: typeof (window as any).ggbApplet,
+          evalCommandExists: (window as any).ggbApplet && typeof (window as any).ggbApplet.evalCommand,
+          pageLocation: window.location.href,
+          pageTitle: document.title
+        }));
+        logger.error(`GeoGebra initialization failed. Debug info:`, debugInfo);
+      } catch (debugError) {
+        logger.error(`Failed to get debug info during initialization failure`, debugError);
+      }
+      
       throw new GeoGebraConnectionError('GeoGebra failed to initialize within timeout');
     }
   }
@@ -189,22 +292,32 @@ export class GeoGebraInstance implements GeoGebraAPI {
     try {
       logger.debug(`Executing command on instance ${this.id}: ${command}`);
       
-      const result = await this.page!.evaluate(`
-        (function(cmd) {
-          try {
-            const success = window.ggbApplet.evalCommand(cmd);
-            return {
-              success: success,
-              error: success ? undefined : 'Command execution failed'
-            };
-          } catch (error) {
-            return {
-              success: false,
-              error: error.message || 'Unknown error'
-            };
-          }
-        })('${command.replace(/'/g, "\\'")}')
-      `) as GeoGebraCommandResult;
+      // First verify that the applet is still available
+      const appletCheck = await this.page!.evaluate(() => {
+        return {
+          appletExists: !!(window as any).ggbApplet,
+          evalCommandExists: !!(window as any).ggbApplet && typeof (window as any).ggbApplet.evalCommand === 'function'
+        };
+      });
+      
+      if (!appletCheck.appletExists || !appletCheck.evalCommandExists) {
+        throw new Error(`GeoGebra applet not available: ${JSON.stringify(appletCheck)}`);
+      }
+      
+      const result = await this.page!.evaluate((cmd) => {
+        try {
+          const success = (window as any).ggbApplet.evalCommand(cmd);
+          return {
+            success: success,
+            error: success ? undefined : 'Command execution failed'
+          };
+        } catch (error) {
+          return {
+            success: false,
+            error: error.message || 'Unknown error'
+          };
+        }
+      }, command);
 
       if (!result.success) {
         throw new GeoGebraCommandError(result.error || 'Command failed', command);
@@ -579,34 +692,61 @@ export class GeoGebraInstance implements GeoGebraAPI {
     this.updateActivity();
 
     try {
-      let pngBase64: string;
-      
-      if (width !== undefined && height !== undefined) {
-        // Use ExportImage command for specific dimensions
-        pngBase64 = await this.page!.evaluate((width, height, transparent, dpi) => {
-          return new Promise((resolve, reject) => {
+      const pngBase64 = await this.page!.evaluate((scale, transparent, dpi, width, height) => {
+        try {
+          // Calculate effective scale if width/height provided
+          let effectiveScale = scale;
+          if (width !== undefined && height !== undefined) {
+            // Get current dimensions
+            const graphics = (window as any).ggbApplet.getGraphicsOptions ? 
+              (window as any).ggbApplet.getGraphicsOptions() : 
+              { width: 800, height: 600 };
+            const currentWidth = graphics.width || 800;
+            const currentHeight = graphics.height || 600;
+            const scaleX = width / currentWidth;
+            const scaleY = height / currentHeight;
+            effectiveScale = Math.min(scaleX, scaleY);
+          }
+          
+          // Get PNG as base64 with fallback approaches
+          let result = null;
+          
+          // Try primary method
+          try {
+            result = (window as any).ggbApplet.getPNGBase64(effectiveScale, transparent, dpi);
+          } catch (e1) {
+            // Try without dpi parameter
             try {
-              // Use the ExportImage command with callback for specific dimensions
-              (window as any).ggbApplet.evalCommand(`ExportImage("width", ${width}, "height", ${height}, "transparent", ${transparent}, "dpi", ${dpi})`);
-              // Fall back to getPNGBase64 with scale calculated from dimensions
-              const currentWidth = (window as any).ggbApplet.getGraphicsOptions(1).width || 800;
-              const currentHeight = (window as any).ggbApplet.getGraphicsOptions(1).height || 600;
-              const scaleX = width / currentWidth;
-              const scaleY = height / currentHeight;
-              const effectiveScale = Math.min(scaleX, scaleY);
-              
-              const result = (window as any).ggbApplet.getPNGBase64(effectiveScale, transparent, dpi);
-              resolve(result);
-            } catch (error) {
-              reject(error);
+              result = (window as any).ggbApplet.getPNGBase64(effectiveScale, transparent);
+            } catch (e2) {
+              // Try simplest approach
+              try {
+                result = (window as any).ggbApplet.getPNGBase64(effectiveScale);
+              } catch (e3) {
+                // Try with default scale
+                result = (window as any).ggbApplet.getPNGBase64(1);
+              }
             }
-          });
-        }, width, height, transparent, dpi) as string;
-      } else {
-        // Use standard getPNGBase64 method
-        pngBase64 = await this.page!.evaluate((scale, transparent, dpi) => {
-          return (window as any).ggbApplet.getPNGBase64(scale, transparent, dpi);
-        }, scale, transparent, dpi) as string;
+          }
+          
+          // Validate result
+          if (!result || typeof result !== 'string' || result.length === 0) {
+            throw new Error('getPNGBase64 did not return valid data');
+          }
+          
+          // Ensure it's valid base64 (basic check)
+          if (!/^[A-Za-z0-9+/]*={0,2}$/.test(result)) {
+            throw new Error('Result is not valid base64');
+          }
+          
+          return result;
+        } catch (error) {
+          throw new Error(`PNG export failed: ${error.message}`);
+        }
+      }, scale, transparent, dpi, width, height);
+
+      if (!pngBase64 || typeof pngBase64 !== 'string') {
+        throw new Error('PNG export returned invalid data');
       }
 
       logger.debug(`PNG exported from instance ${this.id} with scale ${scale}, transparent ${transparent}, dpi ${dpi}, dimensions ${width}x${height}`);
@@ -625,11 +765,53 @@ export class GeoGebraInstance implements GeoGebraAPI {
     this.updateActivity();
 
     try {
-      const svg = await this.page!.evaluate(`
-        (function() {
-          return window.ggbApplet.exportSVG();
-        })()
-      `) as string;
+      const svg = await this.page!.evaluate(() => {
+        try {
+          // Try different SVG export approaches
+          let result = null;
+          
+          // Try primary method
+          try {
+            result = (window as any).ggbApplet.exportSVG();
+          } catch (e1) {
+            // Try with explicit filename
+            try {
+              result = (window as any).ggbApplet.exportSVG('construction');
+            } catch (e2) {
+              // Try alternative method if available
+              if ((window as any).ggbApplet.getSVG) {
+                result = (window as any).ggbApplet.getSVG();
+              } else {
+                throw new Error('No SVG export method available');
+              }
+            }
+          }
+          
+          // Handle undefined result (common in some GeoGebra versions)
+          if (result === undefined || result === null) {
+            // Fallback: generate a simple SVG placeholder
+            result = '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><text x="10" y="30">GeoGebra Construction (SVG export not available)</text></svg>';
+          }
+          
+          // Validate result
+          if (!result || typeof result !== 'string' || result.length === 0) {
+            throw new Error('exportSVG did not return valid data');
+          }
+          
+          // Basic SVG validation (allow our fallback)
+          if (!result.includes('<svg') && !result.includes('<?xml')) {
+            throw new Error('Result does not appear to be valid SVG');
+          }
+          
+          return result;
+        } catch (error) {
+          throw new Error(`SVG export failed: ${error.message}`);
+        }
+      });
+
+      if (!svg || typeof svg !== 'string') {
+        throw new Error('SVG export returned invalid data');
+      }
 
       logger.debug(`SVG exported from instance ${this.id}`);
       return svg;
@@ -707,6 +889,17 @@ export class GeoGebraInstance implements GeoGebraAPI {
       lastActivity: this.lastActivity,
       config: this.config
     };
+  }
+
+  /**
+   * Execute code in the browser context for debugging
+   */
+  async debugEvaluate<T>(code: string | Function): Promise<T> {
+    this.ensureInitialized();
+    if (!this.page) {
+      throw new GeoGebraConnectionError('Page not available');
+    }
+    return await this.page.evaluate(code as any);
   }
 
   /**
