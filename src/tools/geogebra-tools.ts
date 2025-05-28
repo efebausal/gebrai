@@ -519,7 +519,7 @@ export const geogebraTools: ToolDefinition[] = [
         properties: {
           type: {
             type: 'string',
-            description: 'Optional: filter by object type (e.g., "point", "line", "circle")'
+            description: 'Optional: filter by object type. Use "all" for all objects, or specific types like "point", "line", "circle", "polygon", "function", "conic", etc.'
           }
         },
         required: []
@@ -530,7 +530,10 @@ export const geogebraTools: ToolDefinition[] = [
         const type = params['type'] as string | undefined;
         const instance = await instancePool.getDefaultInstance();
         
-        const objectNames = await instance.getAllObjectNames(type);
+        // Handle the special case where type is "all" - GeoGebra API expects undefined for all objects
+        const typeFilter = (type === 'all') ? undefined : type;
+        
+        const objectNames = await instance.getAllObjectNames(typeFilter);
         const objects = [];
         
         for (const name of objectNames) {
