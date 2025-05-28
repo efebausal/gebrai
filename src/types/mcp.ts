@@ -24,6 +24,45 @@ export interface JsonRpcError {
   data?: unknown;
 }
 
+// MCP Protocol - Initialize
+export interface McpInitializeRequest extends JsonRpcRequest {
+  method: 'initialize';
+  params: {
+    protocolVersion: string;
+    capabilities: {
+      tools?: {};
+      [key: string]: unknown;
+    };
+    clientInfo: {
+      name: string;
+      version: string;
+    };
+  };
+}
+
+export interface McpInitializeResponse extends JsonRpcResponse {
+  result?: {
+    protocolVersion: string;
+    capabilities: {
+      tools?: {
+        listChanged?: boolean;
+      };
+      [key: string]: unknown;
+    };
+    serverInfo: {
+      name: string;
+      version: string;
+    };
+  };
+  error?: JsonRpcError;
+}
+
+// MCP Protocol - Initialized Notification
+export interface McpInitializedNotification extends JsonRpcRequest {
+  method: 'notifications/initialized';
+  params?: Record<string, never>;
+}
+
 // MCP Specific Types
 export interface McpTool {
   name: string;
@@ -32,9 +71,6 @@ export interface McpTool {
     type: 'object';
     properties: Record<string, unknown>;
     required?: string[];
-    oneOf?: Array<{
-      required: string[];
-    }>;
     [key: string]: unknown; // Allow additional JSON Schema properties
   };
 }
@@ -88,7 +124,6 @@ export interface McpServerConfig {
   name: string;
   version: string;
   description: string;
-  port?: number;
   logLevel?: 'error' | 'warn' | 'info' | 'debug';
 }
 

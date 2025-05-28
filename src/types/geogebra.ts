@@ -108,6 +108,13 @@ export interface GeoGebraAPI {
   exportPNG(scale?: number, transparent?: boolean, dpi?: number, width?: number, height?: number): Promise<string>;
   exportSVG(): Promise<string>;
   exportPDF(): Promise<string>;
+  exportAnimation(options?: {
+    duration?: number;
+    frameRate?: number;
+    format?: 'gif' | 'frames';
+    width?: number;
+    height?: number;
+  }): Promise<string | string[]>;
 }
 
 // Error types

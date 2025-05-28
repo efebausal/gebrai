@@ -68,19 +68,17 @@ describe('GEB-3: Core Geometric Construction Tools', () => {
       // Test create_circle tool schema
       const circleTool = tools.find(t => t.name === 'geogebra_create_circle');
       expect(circleTool).toBeDefined();
-      expect(circleTool?.inputSchema.oneOf).toBeDefined();
-      expect(circleTool?.inputSchema.oneOf).toHaveLength(2);
+      expect(circleTool?.inputSchema.required).toEqual(['name']);
       
       // Test create_polygon tool schema
       const polygonTool = tools.find(t => t.name === 'geogebra_create_polygon');
       expect(polygonTool).toBeDefined();
       expect(polygonTool?.inputSchema.required).toEqual(['name', 'vertices']);
       
-      // Test create_line tool schema (enhanced)
+      // Test create_line tool schema
       const lineTool = tools.find(t => t.name === 'geogebra_create_line');
       expect(lineTool).toBeDefined();
-      expect(lineTool?.inputSchema.oneOf).toBeDefined();
-      expect(lineTool?.inputSchema.oneOf).toHaveLength(2);
+      expect(lineTool?.inputSchema.required).toEqual(['name']);
     });
   });
 

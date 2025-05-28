@@ -13,7 +13,6 @@ async function main() {
       name: 'GeoGebra MCP Tool',
       version: '1.0.0',
       description: 'Model Context Protocol server for GeoGebra mathematical visualization',
-      port: parseInt(process.env['PORT'] || '3000', 10),
       logLevel: (process.env['LOG_LEVEL'] as 'error' | 'warn' | 'info' | 'debug') || 'info'
     };
 
@@ -49,13 +48,6 @@ async function main() {
 
     // Start the server
     await server.start();
-
-    // Log server status
-    const status = server.getStatus();
-    logger.info('Server status:', status);
-
-    // Keep the process running
-    logger.info('MCP Server is running. Press Ctrl+C to stop.');
 
   } catch (error) {
     logger.error('Failed to start server:', error);

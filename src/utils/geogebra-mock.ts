@@ -549,11 +549,56 @@ export class MockGeoGebraInstance implements GeoGebraAPI {
     this.ensureInitialized();
     this.updateActivity();
 
-    // Return a simple base64 encoded placeholder PDF
-    const placeholderPDF = 'JVBERi0xLjQKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKPj4KZW5kb2JqCjIgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFszIDAgUl0KL0NvdW50IDEKPD4KZW5kb2JqCjMgMCBvYmoKPDwKL1R5cGUgL1BhZ2UKL1BhcmVudCAyIDAgUgovTWVkaWFCb3ggWzAgMCA2MTIgNzkyXQovQ29udGVudHMgNCAwIFIKPj4KZW5kb2JqCjQgMCBvYmoKPDwKL0xlbmd0aCA0NAo+PgpzdHJlYW0KQlQKL0YxIDEyIFRmCjEwMCAzMDAgVGQKKE1vY2sgR2VvR2VicmEgUERGKSBUagpFVApxbnN0cmVhbQplbmRvYmoKNSAwIG9iago8PAovVHlwZSAvRm9udAovU3VidHlwZSAvVHlwZTEKL0Jhc2VGb250IC9IZWx2ZXRpY2EKPj4KZW5kb2JqCnhyZWYKMCA2CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMDU4IDAwMDAwIG4gCjAwMDAwMDAxMTUgMDAwMDAgbiAKMDAwMDAwMDIwNiAwMDAwMCBuIAowMDAwMDAwMzAxIDAwMDAwIG4gCnRyYWlsZXIKPDwKL1NpemUgNgovUm9vdCAxIDAgUgo+PgpzdGFydHhyZWYKMzk5CiUlRU9G';
+    logger.debug(`Mock PDF export from instance ${this.id}`);
     
-    logger.debug(`Mock PDF exported from instance ${this.id}`);
-    return placeholderPDF;
+    // Return mock PDF data (base64 encoded)
+    const mockPdfData = 'JVBERi0xLjQKJcOkw7zDtsOgCjIgMCBvYmoKPDwvTGVuZ3RoIDMgMCBSL0ZpbHRlci9GbGF0ZURlY29kZT4+CnN0cmVhbQp4nDPQM1Qo5ypUMFAw0DMwULBVqOZSUDBQykvMTbVSUDC2UshIzStRyMnPS7VVqAUAYQsKZAplbmRzdHJlYW0KZW5kb2JqCgozIDAgb2JqCjI4CmVuZG9iagoKMSAwIG9iago8PC9UeXBlL0NhdGFsb2cvUGFnZXMgNCAwIFI+PgplbmRvYmoKCjQgMCBvYmoKPDwvVHlwZS9QYWdlcy9LaWRzWzUgMCBSXS9Db3VudCAxPj4KZW5kb2JqCgo1IDAgb2JqCjw8L1R5cGUvUGFnZS9QYXJlbnQgNCAwIFIvTWVkaWFCb3hbMCAwIDYxMiA3OTJdL0NvbnRlbnRzIDIgMCBSPj4KZW5kb2JqCgp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAyOTQgMDAwMDAgbiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMjc0IDAwMDAwIG4gCjAwMDAwMDAzNDMgMDAwMDAgbiAKMDAwMDAwMDQwMCAwMDAwMCBuIAp0cmFpbGVyCjw8L1NpemUgNi9Sb290IDEgMCBSPj4Kc3RhcnR4cmVmCjUwMwolJUVPRg==';
+    
+    return mockPdfData;
+  }
+
+  /**
+   * Export animation as frames (GEB-17 enhancement)
+   */
+  async exportAnimation(options: {
+    duration?: number;
+    frameRate?: number;
+    format?: 'gif' | 'frames';
+    width?: number;
+    height?: number;
+  } = {}): Promise<string | string[]> {
+    this.ensureInitialized();
+    this.updateActivity();
+
+    const {
+      duration = 5000, // 5 seconds
+      frameRate = 10,   // 10 fps
+      format = 'frames',
+      width = 800,
+      height = 600
+    } = options;
+
+    logger.debug(`Mock animation export from instance ${this.id}`, { duration, frameRate, format, width, height });
+
+    // Calculate number of frames
+    const totalFrames = Math.ceil((duration / 1000) * frameRate);
+    
+    // Generate mock frame data
+    const frames: string[] = [];
+    for (let i = 0; i < totalFrames; i++) {
+      // Generate a simple mock PNG frame (base64 encoded)
+      const mockFrameData = `iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==_frame_${i}`;
+      frames.push(mockFrameData);
+    }
+
+    logger.debug(`Mock animation export completed: ${frames.length} frames generated`);
+
+    if (format === 'frames') {
+      return frames;
+    } else {
+      // For GIF format, return a mock GIF data string
+      return 'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7_mock_gif';
+    }
   }
 
   /**

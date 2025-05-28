@@ -448,16 +448,55 @@ export class GeoGebraInstance implements GeoGebraAPI {
           return null;
         }
 
-        return {
+        const type = (window as any).ggbApplet.getObjectType(name);
+        
+        // Base information that all objects have
+        const baseInfo = {
           name,
-          type: (window as any).ggbApplet.getObjectType(name),
-          value: (window as any).ggbApplet.getValue(name),
+          type,
           visible: (window as any).ggbApplet.getVisible(name),
           defined: (window as any).ggbApplet.isDefined(name),
-          x: (window as any).ggbApplet.getXcoord(name),
-          y: (window as any).ggbApplet.getYcoord(name),
-          z: (window as any).ggbApplet.getZcoord(name),
           color: (window as any).ggbApplet.getColor(name)
+        };
+
+        // Try to get value and valueString safely
+        let value = null;
+        let valueString = null;
+        try {
+          value = (window as any).ggbApplet.getValue(name);
+        } catch (e) {
+          // Some objects don't have a numeric value
+        }
+        
+        try {
+          valueString = (window as any).ggbApplet.getValueString(name);
+        } catch (e) {
+          // Some objects don't have a value string
+        }
+
+        // Only try to get coordinates for objects that support them
+        // Points, segments, lines, circles typically have coordinates
+        // Functions, curves, implicit curves typically don't
+        const coordinateTypes = ['point', 'segment', 'line', 'circle', 'polygon', 'vector'];
+        let coordinates = {};
+        
+        if (coordinateTypes.includes(type.toLowerCase())) {
+          try {
+            coordinates = {
+              x: (window as any).ggbApplet.getXcoord(name),
+              y: (window as any).ggbApplet.getYcoord(name),
+              z: (window as any).ggbApplet.getZcoord(name)
+            };
+          } catch (e) {
+            // If coordinate access fails, just omit coordinates
+          }
+        }
+
+        return {
+          ...baseInfo,
+          value,
+          valueString,
+          ...coordinates
         };
       }, objName);
 
@@ -686,21 +725,43 @@ export class GeoGebraInstance implements GeoGebraAPI {
 
   /**
    * Export construction as PNG (base64) with enhanced parameters
+   * GEB-17: Enhanced with validation, retry logic, and better error handling
    */
   async exportPNG(scale: number = 1, transparent: boolean = false, dpi: number = 72, width?: number, height?: number): Promise<string> {
     this.ensureInitialized();
     this.updateActivity();
 
-    try {
+    // GEB-17: Validate export readiness before attempting
+    const readiness = await this.validateExportReadiness('png');
+    if (!readiness.ready) {
+      throw new GeoGebraError(`PNG export not ready: ${readiness.issues.join(', ')}. Recommendations: ${readiness.recommendations.join(', ')}`);
+    }
+
+    return this.retryOperation(async () => {
       const pngBase64 = await this.page!.evaluate((scale, transparent, dpi, width, height) => {
         try {
+          // GEB-17: Enhanced applet availability check
+          const applet = (window as any).ggbApplet;
+          if (!applet) {
+            throw new Error('GeoGebra applet not available');
+          }
+          
+          if (typeof applet.getPNGBase64 !== 'function') {
+            throw new Error('getPNGBase64 method not available on applet');
+          }
+
           // Calculate effective scale if width/height provided
           let effectiveScale = scale;
           if (width !== undefined && height !== undefined) {
-            // Get current dimensions
-            const graphics = (window as any).ggbApplet.getGraphicsOptions ? 
-              (window as any).ggbApplet.getGraphicsOptions() : 
-              { width: 800, height: 600 };
+            // Get current dimensions with better error handling
+            let graphics;
+            try {
+              graphics = applet.getGraphicsOptions ? applet.getGraphicsOptions() : { width: 800, height: 600 };
+            } catch (e) {
+              // Fallback to default dimensions if getGraphicsOptions fails
+              graphics = { width: 800, height: 600 };
+            }
+            
             const currentWidth = graphics.width || 800;
             const currentHeight = graphics.height || 600;
             const scaleX = width / currentWidth;
@@ -708,146 +769,407 @@ export class GeoGebraInstance implements GeoGebraAPI {
             effectiveScale = Math.min(scaleX, scaleY);
           }
           
-          // Get PNG as base64 with fallback approaches
+          // GEB-17: Enhanced PNG export with better error handling and validation
           let result = null;
+          let lastError = null;
           
-          // Try primary method
+          // Try primary method with full parameters
           try {
-            result = (window as any).ggbApplet.getPNGBase64(effectiveScale, transparent, dpi);
-          } catch (e1) {
-            // Try without dpi parameter
-            try {
-              result = (window as any).ggbApplet.getPNGBase64(effectiveScale, transparent);
-            } catch (e2) {
-              // Try simplest approach
-              try {
-                result = (window as any).ggbApplet.getPNGBase64(effectiveScale);
-              } catch (e3) {
-                // Try with default scale
-                result = (window as any).ggbApplet.getPNGBase64(1);
-              }
+            result = applet.getPNGBase64(effectiveScale, transparent, dpi);
+            if (result && typeof result === 'string' && result.length > 0) {
+              return result; // Success with primary method
             }
+          } catch (e1) {
+            lastError = e1;
+            // Continue to fallback methods
           }
           
-          // Validate result
-          if (!result || typeof result !== 'string' || result.length === 0) {
-            throw new Error('getPNGBase64 did not return valid data');
+          // Try without dpi parameter
+          try {
+            result = applet.getPNGBase64(effectiveScale, transparent);
+            if (result && typeof result === 'string' && result.length > 0) {
+              return result; // Success with fallback method
+            }
+          } catch (e2) {
+            lastError = e2;
+            // Continue to next fallback
           }
           
-          // Ensure it's valid base64 (basic check)
-          if (!/^[A-Za-z0-9+/]*={0,2}$/.test(result)) {
-            throw new Error('Result is not valid base64');
+          // Try simplest approach with just scale
+          try {
+            result = applet.getPNGBase64(effectiveScale);
+            if (result && typeof result === 'string' && result.length > 0) {
+              return result; // Success with simple method
+            }
+          } catch (e3) {
+            lastError = e3;
+            // Continue to final fallback
           }
           
-          return result;
+          // Try with default scale as last resort
+          try {
+            result = applet.getPNGBase64(1);
+            if (result && typeof result === 'string' && result.length > 0) {
+              return result; // Success with default scale
+            }
+          } catch (e4) {
+            lastError = e4;
+          }
+          
+          // If we get here, all methods failed
+          throw new Error(`All PNG export methods failed. Last error: ${lastError ? lastError.message : 'Unknown error'}. Result was: ${typeof result} with length ${result ? result.length : 'undefined'}`);
+          
         } catch (error) {
-          throw new Error(`PNG export failed: ${error.message}`);
+          throw new Error(`PNG export failed: ${error.message || error}`);
         }
       }, scale, transparent, dpi, width, height);
 
-      if (!pngBase64 || typeof pngBase64 !== 'string') {
-        throw new Error('PNG export returned invalid data');
+      // GEB-17: Enhanced validation of the result
+      if (!pngBase64) {
+        throw new Error('PNG export returned null or undefined');
+      }
+      
+      if (typeof pngBase64 !== 'string') {
+        throw new Error(`PNG export returned invalid type: ${typeof pngBase64}`);
+      }
+      
+      if (pngBase64.length === 0) {
+        throw new Error('PNG export returned empty string');
+      }
+      
+      // Enhanced base64 validation
+      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(pngBase64)) {
+        throw new Error(`Result is not valid base64. Length: ${pngBase64.length}, starts with: ${pngBase64.substring(0, 50)}`);
+      }
+      
+      // Additional check for minimum reasonable size (base64 should be substantial for a real image)
+      if (pngBase64.length < 100) {
+        throw new Error(`PNG result suspiciously small (${pngBase64.length} characters): ${pngBase64}`);
       }
 
-      logger.debug(`PNG exported from instance ${this.id} with scale ${scale}, transparent ${transparent}, dpi ${dpi}, dimensions ${width}x${height}`);
+      logger.debug(`PNG exported from instance ${this.id} with scale ${scale}, transparent ${transparent}, dpi ${dpi}, dimensions ${width}x${height}, result length: ${pngBase64.length}`);
       return pngBase64;
-    } catch (error) {
-      logger.error(`Failed to export PNG from instance ${this.id}`, error);
-      throw new GeoGebraError(`Failed to export PNG: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    }, 3, 1000, 'PNG export');
   }
 
   /**
    * Export construction as SVG
+   * GEB-17: Enhanced with better validation and error handling, no more placeholder responses
    */
   async exportSVG(): Promise<string> {
     this.ensureInitialized();
     this.updateActivity();
 
-    try {
+    // GEB-17: Validate export readiness before attempting
+    const readiness = await this.validateExportReadiness('svg');
+    if (!readiness.ready) {
+      throw new GeoGebraError(`SVG export not ready: ${readiness.issues.join(', ')}. Recommendations: ${readiness.recommendations.join(', ')}`);
+    }
+
+    return this.retryOperation(async () => {
       const svg = await this.page!.evaluate(() => {
         try {
-          // Try different SVG export approaches
-          let result = null;
+          // GEB-17: Enhanced applet availability check
+          const applet = (window as any).ggbApplet;
+          if (!applet) {
+            throw new Error('GeoGebra applet not available');
+          }
           
-          // Try primary method
-          try {
-            result = (window as any).ggbApplet.exportSVG();
-          } catch (e1) {
-            // Try with explicit filename
+          let result = null;
+          let lastError = null;
+          
+          // Try exportSVG method first
+          if (typeof applet.exportSVG === 'function') {
             try {
-              result = (window as any).ggbApplet.exportSVG('construction');
-            } catch (e2) {
-              // Try alternative method if available
-              if ((window as any).ggbApplet.getSVG) {
-                result = (window as any).ggbApplet.getSVG();
-              } else {
-                throw new Error('No SVG export method available');
+              result = applet.exportSVG();
+              if (result && typeof result === 'string' && result.includes('<svg')) {
+                return result; // Success with exportSVG
               }
+            } catch (e1) {
+              lastError = e1;
+            }
+            
+            // Try with filename parameter
+            try {
+              result = applet.exportSVG('construction');
+              if (result && typeof result === 'string' && result.includes('<svg')) {
+                return result; // Success with filename parameter
+              }
+            } catch (e2) {
+              lastError = e2;
             }
           }
           
-          // Handle undefined result (common in some GeoGebra versions)
-          if (result === undefined || result === null) {
-            // Fallback: generate a simple SVG placeholder
-            result = '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><text x="10" y="30">GeoGebra Construction (SVG export not available)</text></svg>';
+          // Try getSVG method as alternative
+          if (typeof applet.getSVG === 'function') {
+            try {
+              result = applet.getSVG();
+              if (result && typeof result === 'string' && result.includes('<svg')) {
+                return result; // Success with getSVG
+              }
+            } catch (e3) {
+              lastError = e3;
+            }
           }
           
-          // Validate result
-          if (!result || typeof result !== 'string' || result.length === 0) {
-            throw new Error('exportSVG did not return valid data');
-          }
+          // GEB-17: NO MORE PLACEHOLDER RESPONSES - throw error instead
+          const availableMethods = [];
+          if (typeof applet.exportSVG === 'function') availableMethods.push('exportSVG');
+          if (typeof applet.getSVG === 'function') availableMethods.push('getSVG');
           
-          // Basic SVG validation (allow our fallback)
-          if (!result.includes('<svg') && !result.includes('<?xml')) {
-            throw new Error('Result does not appear to be valid SVG');
-          }
+          throw new Error(`All SVG export methods failed. Available methods: ${availableMethods.join(', ')}. Last error: ${lastError ? lastError.message : 'Unknown error'}. Result was: ${typeof result} ${result ? (result.includes ? (result.includes('<svg') ? 'contains <svg>' : 'missing <svg>') : 'not string-like') : 'null/undefined'}`);
           
-          return result;
         } catch (error) {
-          throw new Error(`SVG export failed: ${error.message}`);
+          throw new Error(`SVG export failed: ${error.message || error}`);
         }
       });
 
-      if (!svg || typeof svg !== 'string') {
-        throw new Error('SVG export returned invalid data');
+      // GEB-17: Enhanced validation - no placeholder acceptance
+      if (!svg) {
+        throw new Error('SVG export returned null or undefined');
+      }
+      
+      if (typeof svg !== 'string') {
+        throw new Error(`SVG export returned invalid type: ${typeof svg}`);
+      }
+      
+      if (svg.length === 0) {
+        throw new Error('SVG export returned empty string');
+      }
+      
+      // Strict SVG validation - must be actual SVG, not placeholder
+      if (!svg.includes('<svg')) {
+        throw new Error(`Result does not contain valid SVG content. Length: ${svg.length}, starts with: ${svg.substring(0, 100)}`);
+      }
+      
+      // Check for our old placeholder pattern and reject it
+      if (svg.includes('SVG export not available')) {
+        throw new Error('SVG export returned placeholder content instead of actual SVG');
+      }
+      
+      // Additional validation for minimum reasonable SVG size
+      if (svg.length < 50) {
+        throw new Error(`SVG result suspiciously small (${svg.length} characters): ${svg}`);
       }
 
-      logger.debug(`SVG exported from instance ${this.id}`);
+      logger.debug(`SVG exported from instance ${this.id}, result length: ${svg.length}`);
       return svg;
-    } catch (error) {
-      logger.error(`Failed to export SVG from instance ${this.id}`, error);
-      throw new GeoGebraError(`Failed to export SVG: ${error instanceof Error ? error.message : String(error)}`);
-    }
+    }, 3, 1000, 'SVG export');
   }
 
   /**
    * Export construction as PDF (base64)
+   * GEB-17: Enhanced with better connection management and timeout handling
    */
   async exportPDF(): Promise<string> {
     this.ensureInitialized();
     this.updateActivity();
 
-    try {
-      // Generate PDF by taking a screenshot of the page
-      const pdf = await this.page!.pdf({
-        format: 'A4',
-        printBackground: true,
-        margin: {
-          top: '0.5in',
-          bottom: '0.5in',
-          left: '0.5in',
-          right: '0.5in'
+    // GEB-17: Validate export readiness before attempting
+    const readiness = await this.validateExportReadiness('pdf');
+    if (!readiness.ready) {
+      throw new GeoGebraError(`PDF export not ready: ${readiness.issues.join(', ')}. Recommendations: ${readiness.recommendations.join(', ')}`);
+    }
+
+    return this.retryOperation(async () => {
+      // GEB-17: Enhanced page availability check
+      if (!this.page || this.page.isClosed()) {
+        throw new Error('Browser page not available for PDF generation');
+      }
+
+      try {
+        // GEB-17: Set longer timeout for PDF generation to prevent socket hang up
+        const pdfOptions = {
+          format: 'A4' as const,
+          printBackground: true,
+          margin: {
+            top: '0.5in',
+            bottom: '0.5in',
+            left: '0.5in',
+            right: '0.5in'
+          },
+          timeout: 30000 // 30 second timeout to prevent socket hang up
+        };
+
+        logger.debug(`Starting PDF generation for instance ${this.id}`);
+        
+        // GEB-17: Wait for page to be fully loaded and stable before PDF generation
+        await this.page.waitForLoadState?.('domcontentloaded', { timeout: 10000 }).catch(() => {
+          // Ignore if waitForLoadState is not available or times out
+          logger.debug('waitForLoadState not available or timed out, proceeding with PDF generation');
+        });
+
+        // Generate PDF with enhanced error handling
+        const pdf = await this.page.pdf(pdfOptions);
+
+        if (!pdf || pdf.length === 0) {
+          throw new Error('PDF generation returned empty or null result');
         }
+
+        const pdfBase64 = pdf.toString('base64');
+        
+        // GEB-17: Validate the PDF result
+        if (!pdfBase64 || typeof pdfBase64 !== 'string') {
+          throw new Error('PDF to base64 conversion failed');
+        }
+        
+        if (pdfBase64.length === 0) {
+          throw new Error('PDF base64 result is empty');
+        }
+        
+        // Basic validation that it's valid base64
+        if (!/^[A-Za-z0-9+/]*={0,2}$/.test(pdfBase64)) {
+          throw new Error(`PDF result is not valid base64. Length: ${pdfBase64.length}`);
+        }
+        
+        // Check for minimum reasonable PDF size (PDFs should be substantial)
+        if (pdfBase64.length < 500) {
+          throw new Error(`PDF result suspiciously small (${pdfBase64.length} characters)`);
+        }
+
+        logger.debug(`PDF exported from instance ${this.id}, result length: ${pdfBase64.length}`);
+        return pdfBase64;
+        
+      } catch (error) {
+        // GEB-17: Enhanced error handling for specific PDF generation issues
+        if (error.message && error.message.includes('timeout')) {
+          throw new Error(`PDF generation timeout: ${error.message}`);
+        }
+        if (error.message && error.message.includes('socket hang up')) {
+          throw new Error(`PDF generation connection error (socket hang up): ${error.message}`);
+        }
+        if (error.message && error.message.includes('disconnected')) {
+          throw new Error(`Browser disconnected during PDF generation: ${error.message}`);
+        }
+        
+        throw new Error(`PDF generation failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }, 3, 2000, 'PDF export'); // Longer delay between retries for PDF
+  }
+
+  /**
+   * Export animation as GIF or video frames
+   * GEB-17: Enhanced with comprehensive applet availability checks
+   */
+  async exportAnimation(options: {
+    duration?: number;
+    frameRate?: number;
+    format?: 'gif' | 'frames';
+    width?: number;
+    height?: number;
+  } = {}): Promise<string | string[]> {
+    this.ensureInitialized();
+    this.updateActivity();
+
+    // GEB-17: Validate export readiness before attempting
+    const readiness = await this.validateExportReadiness('animation');
+    if (!readiness.ready) {
+      throw new GeoGebraError(`Animation export not ready: ${readiness.issues.join(', ')}. Recommendations: ${readiness.recommendations.join(', ')}`);
+    }
+
+    const {
+      duration = 5000, // 5 seconds
+      frameRate = 10,   // 10 fps
+      format = 'frames',
+      width,
+      height
+    } = options;
+
+    return this.retryOperation(async () => {
+      // GEB-17: Enhanced applet availability and animation readiness check
+      const animationCheck = await this.page!.evaluate(() => {
+        const applet = (window as any).ggbApplet;
+        
+        if (!applet) {
+          return { ready: false, error: 'GeoGebra applet not available' };
+        }
+        
+        if (typeof applet.startAnimation !== 'function' || typeof applet.stopAnimation !== 'function') {
+          return { ready: false, error: 'Animation methods not available on applet' };
+        }
+        
+        if (typeof applet.isAnimationRunning !== 'function') {
+          return { ready: false, error: 'Animation status method not available' };
+        }
+        
+        // Check if there are any objects that can be animated
+        try {
+          const allObjects = applet.getAllObjectNames();
+          if (!allObjects || allObjects.length === 0) {
+            return { ready: false, error: 'No objects available for animation' };
+          }
+        } catch (e) {
+          return { ready: false, error: 'Cannot access object list for animation' };
+        }
+        
+        return { ready: true, error: null };
       });
 
-      const pdfBase64 = pdf.toString('base64');
-      logger.debug(`PDF exported from instance ${this.id}`);
-      return pdfBase64;
-    } catch (error) {
-      logger.error(`Failed to export PDF from instance ${this.id}`, error);
-      throw new GeoGebraError(`Failed to export PDF: ${error instanceof Error ? error.message : String(error)}`);
-    }
+      if (!animationCheck.ready) {
+        throw new Error(`Animation export failed: ${animationCheck.error}`);
+      }
+
+      const frameInterval = 1000 / frameRate;
+      const totalFrames = Math.ceil(duration / frameInterval);
+      const frames: string[] = [];
+
+      logger.debug(`Starting animation capture for instance ${this.id}: ${totalFrames} frames over ${duration}ms`);
+
+      try {
+        // Start animation
+        await this.page!.evaluate(() => {
+          (window as any).ggbApplet.startAnimation();
+        });
+
+        // Capture frames
+        for (let i = 0; i < totalFrames; i++) {
+          // Wait for frame interval
+          await new Promise(resolve => setTimeout(resolve, frameInterval));
+          
+          // Capture frame as PNG
+          try {
+            const frameData = await this.exportPNG(1, false, 72, width, height);
+            frames.push(frameData);
+            logger.debug(`Captured frame ${i + 1}/${totalFrames} for instance ${this.id}`);
+          } catch (frameError) {
+            logger.warn(`Failed to capture frame ${i + 1}/${totalFrames} for instance ${this.id}:`, frameError);
+            // Continue with next frame rather than failing completely
+          }
+        }
+
+        // Stop animation
+        await this.page!.evaluate(() => {
+          (window as any).ggbApplet.stopAnimation();
+        });
+
+        if (frames.length === 0) {
+          throw new Error('No frames were successfully captured');
+        }
+
+        logger.debug(`Animation capture completed for instance ${this.id}: ${frames.length} frames captured`);
+
+        if (format === 'frames') {
+          return frames;
+        } else {
+          // For GIF format, we would need additional processing
+          // For now, return the frames and let the caller handle GIF creation
+          logger.warn('GIF format not yet implemented, returning frames');
+          return frames;
+        }
+
+      } catch (error) {
+        // Ensure animation is stopped even if capture fails
+        try {
+          await this.page!.evaluate(() => {
+            (window as any).ggbApplet.stopAnimation();
+          });
+        } catch (stopError) {
+          logger.error(`Failed to stop animation after capture error:`, stopError);
+        }
+        
+        throw error;
+      }
+    }, 2, 3000, 'Animation export'); // Fewer retries, longer delay for animation
   }
 
   /**
@@ -889,6 +1211,216 @@ export class GeoGebraInstance implements GeoGebraAPI {
       lastActivity: this.lastActivity,
       config: this.config
     };
+  }
+
+  /**
+   * GEB-17: Enhanced diagnostic method to check applet health
+   */
+  async checkAppletHealth(): Promise<{
+    isHealthy: boolean;
+    issues: string[];
+    capabilities: {
+      hasApplet: boolean;
+      hasEvalCommand: boolean;
+      hasExportMethods: boolean;
+      hasAnimationMethods: boolean;
+    };
+    exportAvailability: {
+      png: boolean;
+      svg: boolean;
+      pdf: boolean;
+    };
+  }> {
+    this.ensureInitialized();
+    
+    try {
+      const healthCheck = await this.page!.evaluate(() => {
+        const issues: string[] = [];
+        const applet = (window as any).ggbApplet;
+        
+        // Check basic applet availability
+        const hasApplet = !!applet;
+        if (!hasApplet) {
+          issues.push('GeoGebra applet not found');
+        }
+        
+        // Check core methods
+        const hasEvalCommand = hasApplet && typeof applet.evalCommand === 'function';
+        if (!hasEvalCommand) {
+          issues.push('evalCommand method not available');
+        }
+        
+        // Check export methods
+        const hasPNGExport = hasApplet && typeof applet.getPNGBase64 === 'function';
+        const hasSVGExport = hasApplet && (typeof applet.exportSVG === 'function' || typeof applet.getSVG === 'function');
+        
+        if (!hasPNGExport) {
+          issues.push('PNG export method (getPNGBase64) not available');
+        }
+        if (!hasSVGExport) {
+          issues.push('SVG export methods not available');
+        }
+        
+        // Check animation methods
+        const hasAnimationMethods = hasApplet && 
+          typeof applet.startAnimation === 'function' && 
+          typeof applet.stopAnimation === 'function';
+        
+        if (!hasAnimationMethods) {
+          issues.push('Animation methods not available');
+        }
+        
+        // Test a simple command to verify functionality
+        let commandWorks = false;
+        if (hasEvalCommand) {
+          try {
+            // Try a harmless command
+            const result = applet.evalCommand('1+1');
+            commandWorks = true;
+          } catch (e) {
+            issues.push('Command execution test failed: ' + e.message);
+          }
+        }
+        
+        return {
+          issues,
+          capabilities: {
+            hasApplet,
+            hasEvalCommand: hasEvalCommand && commandWorks,
+            hasExportMethods: hasPNGExport && hasSVGExport,
+            hasAnimationMethods
+          },
+          exportAvailability: {
+            png: hasPNGExport,
+            svg: hasSVGExport,
+            pdf: true // PDF uses page.pdf(), not applet method
+          }
+        };
+      });
+      
+      const isHealthy = healthCheck.issues.length === 0;
+      
+      return {
+        isHealthy,
+        ...healthCheck
+      };
+    } catch (error) {
+      return {
+        isHealthy: false,
+        issues: [`Health check failed: ${error instanceof Error ? error.message : String(error)}`],
+        capabilities: {
+          hasApplet: false,
+          hasEvalCommand: false,
+          hasExportMethods: false,
+          hasAnimationMethods: false
+        },
+        exportAvailability: {
+          png: false,
+          svg: false,
+          pdf: false
+        }
+      };
+    }
+  }
+
+  /**
+   * GEB-17: Enhanced method to validate export readiness before attempting export
+   */
+  async validateExportReadiness(exportType: 'png' | 'svg' | 'pdf' | 'animation'): Promise<{
+    ready: boolean;
+    issues: string[];
+    recommendations: string[];
+  }> {
+    this.ensureInitialized();
+    
+    const health = await this.checkAppletHealth();
+    const issues: string[] = [];
+    const recommendations: string[] = [];
+    
+    if (!health.isHealthy) {
+      issues.push(...health.issues);
+      recommendations.push('Reinitialize the GeoGebra instance');
+    }
+    
+    // Type-specific checks
+    switch (exportType) {
+      case 'png':
+        if (!health.exportAvailability.png) {
+          issues.push('PNG export method not available');
+          recommendations.push('Check GeoGebra applet initialization');
+        }
+        break;
+        
+      case 'svg':
+        if (!health.exportAvailability.svg) {
+          issues.push('SVG export method not available');
+          recommendations.push('Check GeoGebra applet initialization');
+        }
+        break;
+        
+      case 'pdf':
+        // PDF uses browser PDF generation, check page availability
+        if (!this.page || this.page.isClosed()) {
+          issues.push('Browser page not available for PDF generation');
+          recommendations.push('Reinitialize the browser instance');
+        }
+        break;
+        
+      case 'animation':
+        if (!health.capabilities.hasAnimationMethods) {
+          issues.push('Animation methods not available');
+          recommendations.push('Check GeoGebra applet initialization');
+        }
+        
+        // Check if there are objects to animate
+        try {
+          const objects = await this.getAllObjectNames();
+          if (objects.length === 0) {
+            issues.push('No objects available for animation');
+            recommendations.push('Create geometric objects before exporting animation');
+          }
+        } catch (e) {
+          issues.push('Cannot check for objects to animate');
+        }
+        break;
+    }
+    
+    return {
+      ready: issues.length === 0,
+      issues,
+      recommendations
+    };
+  }
+
+  /**
+   * GEB-17: Retry mechanism for failed operations
+   */
+  private async retryOperation<T>(
+    operation: () => Promise<T>,
+    maxRetries: number = 3,
+    delay: number = 1000,
+    operationName: string = 'operation'
+  ): Promise<T> {
+    let lastError: Error | unknown;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        logger.debug(`Attempting ${operationName} (attempt ${attempt}/${maxRetries})`);
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        logger.warn(`${operationName} attempt ${attempt} failed:`, error);
+        
+        if (attempt < maxRetries) {
+          // Wait before retrying, with exponential backoff
+          const waitTime = delay * Math.pow(2, attempt - 1);
+          logger.debug(`Waiting ${waitTime}ms before retry`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
+    }
+    
+    throw new Error(`${operationName} failed after ${maxRetries} attempts: ${lastError instanceof Error ? lastError.message : String(lastError)}`);
   }
 
   /**

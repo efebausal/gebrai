@@ -13,6 +13,10 @@ import logger from '../utils/logger';
  * - Mathematical proofs
  */
 
+// Check if we're in MCP mode (stdio communication)
+// When piping input, process.stdin.isTTY is undefined, not false
+const isMcpMode = !process.stdin.isTTY;
+
 // Template categories
 export type TemplateCategory = 'geometry' | 'algebra' | 'calculus' | 'statistics' | 'proofs';
 
@@ -37,7 +41,9 @@ export class EducationalTemplateRegistry {
 
   register(template: EducationalTemplate): void {
     this.templates.set(template.id, template);
-    logger.info(`Registered educational template: ${template.id}`);
+    if (!isMcpMode) {
+      logger.info(`Registered educational template: ${template.id}`);
+    }
   }
 
   getTemplate(id: string): EducationalTemplate | undefined {
@@ -283,7 +289,9 @@ export function initializeEducationalTemplates(): void {
     templateRegistry.register(template);
   });
   
-  logger.info(`Registered ${templateRegistry.getAllTemplates().length} educational templates`);
+  if (!isMcpMode) {
+    logger.info(`Registered ${templateRegistry.getAllTemplates().length} educational templates`);
+  }
 }
 
 // Initialize templates when module is loaded

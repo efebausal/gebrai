@@ -5,6 +5,10 @@ import { geogebraTools } from './geogebra-tools';
 import { educationalTemplateTools } from './educational-templates';
 import { performanceTools } from './performance-tools';
 
+// Check if we're in MCP mode (stdio communication)
+// When piping input, process.stdin.isTTY is undefined, not false
+const isMcpMode = !process.stdin.isTTY;
+
 /**
  * Tool Registry for managing MCP tools
  */
@@ -16,7 +20,9 @@ export class ToolRegistry {
    */
   register(definition: ToolDefinition): void {
     this.tools.set(definition.tool.name, definition);
-    logger.info(`Registered tool: ${definition.tool.name}`);
+    if (!isMcpMode) {
+      logger.info(`Registered tool: ${definition.tool.name}`);
+    }
   }
 
   /**
@@ -44,9 +50,13 @@ export class ToolRegistry {
     }
 
     try {
-      logger.info(`Executing tool: ${name}`, { params });
+      if (!isMcpMode) {
+        logger.info(`Executing tool: ${name}`, { params });
+      }
       const result = await toolDef.handler(params);
-      logger.info(`Tool execution completed: ${name}`);
+      if (!isMcpMode) {
+        logger.info(`Tool execution completed: ${name}`);
+      }
       return result;
     } catch (error) {
       logger.error(`Tool execution failed: ${name}`, error);

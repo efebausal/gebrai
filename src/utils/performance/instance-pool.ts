@@ -8,6 +8,10 @@ import { GeoGebraPoolConfig } from '../../types/geogebra';
 import logger from '../logger';
 import { performanceMonitor } from './index';
 
+// Check if we're in MCP mode (stdio communication)
+// When piping input, process.stdin.isTTY is undefined, not false
+const isMcpMode = !process.stdin.isTTY;
+
 export interface PooledInstance {
   instance: GeoGebraInstance;
   isActive: boolean;
@@ -49,7 +53,9 @@ export class OptimizedInstancePool {
     process.on('SIGTERM', () => this.cleanup());
     process.on('exit', () => this.cleanup());
     
-    logger.info('Optimized Instance Pool initialized', { config: this.config });
+    if (!isMcpMode) {
+      logger.info('Optimized Instance Pool initialized', { config: this.config });
+    }
   }
 
   static getInstance(config?: Partial<GeoGebraPoolConfig>): OptimizedInstancePool {
