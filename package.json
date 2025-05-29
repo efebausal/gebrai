@@ -1,8 +1,19 @@
 {
-  "name": "geogebra-mcp-tool",
+  "name": "@gebrai/gebrai",
   "version": "1.0.0",
   "description": "Model Context Protocol server for GeoGebra mathematical visualization",
   "main": "dist/index.js",
+  "private": false,
+  "bin": {
+    "geogebra-mcp": "./dist/cli.js",
+    "gebrai": "./dist/cli.js"
+  },
+  "files": [
+    "dist/**/*",
+    "package.json",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "dev": "ts-node src/index.ts",
     "build": "npm run clean && tsc",
@@ -18,7 +29,8 @@
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
     "format": "prettier --write src/**/*.ts",
-    "format:check": "prettier --check src/**/*.ts"
+    "format:check": "prettier --check src/**/*.ts",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "mcp",
@@ -26,10 +38,24 @@
     "geogebra",
     "mathematics",
     "visualization",
-    "ai-tools"
+    "ai-tools",
+    "educational-technology",
+    "mathematical-modeling"
   ],
   "author": "efebaus@pm.me",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gebrai/gebrai.git"
+  },
+  "homepage": "https://github.com/gebrai/gebrai#readme",
+  "bugs": {
+    "url": "https://github.com/gebrai/gebrai/issues"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com/",
+    "access": "restricted"
+  },
   "dependencies": {
     "winston": "^3.11.0",
     "dotenv": "^16.3.1",

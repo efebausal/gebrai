@@ -12,7 +12,81 @@ The GeoGebra MCP Tool bridges the gap between AI reasoning capabilities and math
 - Generate interactive mathematical demonstrations
 - Export visualizations in various formats
 
-## 🚀 Quick Start
+## 🚀 Quick Start Examples
+
+1. **NPX (Recommended)**:
+```bash
+# Start the server
+npx @gebrai/gebrai
+
+# Or with custom log level
+npx @gebrai/gebrai --log-level debug
+```
+
+2. **Connect to Claude Desktop** - Add to your Claude configuration:
+```json
+{
+  "mcpServers": {
+    "geogebra": {
+      "command": "npx",
+      "args": ["@gebrai/gebrai"]
+    }
+  }
+}
+```
+
+3. **Start Creating** - Ask Claude to create mathematical visualizations!
+
+**Need help?** Check our [Getting Started Guide](docs/guides/getting-started.md) for detailed instructions.
+
+## 📦 Installation Options
+
+### NPX (No Installation)
+```bash
+npx @gebrai/gebrai
+```
+✅ No installation required  
+✅ Always uses latest version  
+✅ Perfect for testing  
+
+### Global Installation
+```bash
+npm install -g @gebrai/gebrai
+```
+✅ Faster startup after installation  
+✅ Works offline  
+✅ Consistent version  
+
+### Local Development
+```bash
+git clone <repository-url>
+cd gebrai && npm install
+```
+✅ Full source code access  
+✅ Customization possible  
+✅ Development workflow  
+
+## 🛠️ CLI Usage
+
+The GeoGebra MCP Tool provides a command-line interface with the following options:
+
+```bash
+Usage:
+  npx @gebrai/gebrai [options]
+  gebrai [options]              # if installed globally
+  geogebra-mcp [options]        # alternative command
+
+Options:
+  -h, --help        Show help message
+  -v, --version     Show version information
+  --log-level LEVEL Set log level (error, warn, info, debug) [default: info]
+  --port PORT       Set server port [default: stdin/stdout for MCP]
+
+Examples:
+  npx @gebrai/gebrai                    # Start MCP server
+  npx @gebrai/gebrai --log-level debug  # Start with debug logging
+  npx @gebrai/gebrai --help             # Show help
+```
 
 ### Prerequisites
 
@@ -127,34 +201,6 @@ For comprehensive documentation, visit our [**complete documentation**](docs/REA
 - **[Mathematical Constructions](docs/tutorials/mathematical-constructions.md)** - Geometry and algebra
 - **[Function Plotting](docs/tutorials/function-plotting.md)** - Creating mathematical functions
 - **[Code Examples](docs/examples/)** - Working examples by complexity
-
-## 🚀 Quick Start
-
-1. **Install and Setup**:
-```bash
-git clone <repository-url>
-cd gebrai
-npm install
-npm run build
-npm start
-```
-
-2. **Connect to Claude Desktop** - Add to your Claude configuration:
-```json
-{
-  "mcpServers": {
-    "geogebra": {
-      "command": "node",
-      "args": ["/path/to/gebrai/dist/index.js"],
-      "cwd": "/path/to/gebrai"
-    }
-  }
-}
-```
-
-3. **Start Creating** - Ask Claude to create mathematical visualizations!
-
-**Need help?** Check our [Getting Started Guide](docs/guides/getting-started.md) for detailed instructions.
 
 ## 📊 Tool Overview
 
